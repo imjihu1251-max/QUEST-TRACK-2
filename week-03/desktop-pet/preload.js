@@ -5,4 +5,6 @@ contextBridge.exposeInMainWorld('pet', {
   dragStart: () => ipcRenderer.send('drag-start'),
   dragMove: () => ipcRenderer.send('drag-move'),
   dragEnd: () => ipcRenderer.send('drag-end'),
+  // 키를 누르면 'left' 또는 'right' 만 받는다 (무슨 키인지는 오지 않음)
+  onKeyPress: (callback) => ipcRenderer.on('key-press', (_event, side) => callback(side)),
 });

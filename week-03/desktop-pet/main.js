@@ -1,8 +1,33 @@
 // 바탕화면 창 만들기: 테두리 없음, 배경 투명, 항상 맨 위
 const path = require('path');
 const { app, BrowserWindow, Menu, ipcMain, screen } = require('electron');
+const { uIOhook, UiohookKey: K } = require('uiohook-napi');
 
 const PET_SIZE = 250;
+
+// 키보드 왼쪽 절반의 키. 여기 없는 키는 모두 오른쪽으로 본다
+const LEFT_KEYS = new Set([
+  K.Escape, K.F1, K.F2, K.F3, K.F4, K.F5, K.F6,
+  K.Backquote, K[1], K[2], K[3], K[4], K[5],
+  K.Tab, K.Q, K.W, K.E, K.R, K.T,
+  K.CapsLock, K.A, K.S, K.D, K.F, K.G,
+  K.Shift, K.Z, K.X, K.C, K.V, K.B,
+  K.Ctrl, K.Meta, K.Alt,
+]);
+
+// 지킬 것: 어떤 키를 눌렀는지는 저장도 전송도 하지 않고, 몇 번 눌렀는지만 센다.
+// 키 번호는 아래 함수 안에서 왼쪽·오른쪽을 고르는 데만 쓰고 바로 버린다.
+// 화면(pet.js)에는 'left' / 'right' 만 보낸다.
+let keyCount = 0;
+
+function watchKeyboard(win) {
+  uIOhook.on('keydown', (e) => {
+    keyCount += 1;
+    const side = LEFT_KEYS.has(e.keycode) ? 'left' : 'right';
+    if (!win.isDestroyed()) win.webContents.send('key-press', side);
+  });
+  uIOhook.start();
+}
 
 // 잠드는 시간(초). 시험할 때는 PET_SLEEP_SECONDS=10 처럼 줄여서 켤 수 있다
 const SLEEP_SECONDS = Number(process.env.PET_SLEEP_SECONDS) || 60;
@@ -55,6 +80,8 @@ function createWindow() {
   ipcMain.on('drag-end', () => {
     grab = null;
   });
+
+  watchKeyboard(win);
 }
 
 app.whenReady().then(createWindow);
