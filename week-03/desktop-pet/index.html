@@ -19,7 +19,12 @@
       background-image: url('../art/sheet.png');
       background-size: 500px 500px;
       background-repeat: no-repeat;
+      user-select: none;
+      touch-action: none;
+      cursor: grab;
     }
+
+    #cat:active { cursor: grabbing; }
 
     /* 칸 위치: ① 두 손 / ② 오른손 / ③ 왼손 / ④ 눈 감기 */
     .both-paws  { background-position: 0      0; }
@@ -30,5 +35,6 @@
 </head>
 <body>
   <div id="cat" class="right-paw"></div>
+  <script src="pet.js"></script>
 </body>
 </html>
