@@ -1,0 +1,364 @@
+{
+  "format": "lectio-drop",
+  "version": 1,
+  "note": "각 에셋은 path 위치에 있어요. anims 는 가로 한 줄 스프라이트 시트의 프레임 정보예요.",
+  "credits": "CREDITS.md",
+  "assets": [
+    {
+      "slug": "0x72-dungeontileset-ii-mud-blob",
+      "title": "진흙 덩어리",
+      "titleEn": "Mud Blob",
+      "kind": "sprite",
+      "role": "enemy",
+      "path": "0x72-dungeontileset-ii-mud-blob/mud-blob_idle.png",
+      "files": [
+        "mud-blob_idle.png"
+      ],
+      "multi": false,
+      "style": "pixel",
+      "pixelArt": true,
+      "pixelSize": 16,
+      "width": 16,
+      "height": 16,
+      "tile": null,
+      "anims": [
+        {
+          "key": "idle",
+          "dir": null,
+          "file": "mud-blob_idle.png",
+          "fw": 16,
+          "fh": 16,
+          "frames": 4,
+          "fps": 10,
+          "loop": true
+        }
+      ],
+      "layers": null,
+      "durationMs": null,
+      "loop": false,
+      "bpm": null,
+      "license": "CC0",
+      "creditRequired": false,
+      "creator": "0x72 (Robert)",
+      "sourceUrl": "https://0x72.itch.io/dungeontileset-ii",
+      "attribution": null
+    },
+    {
+      "slug": "0x72-dungeontileset-ii-skeleton",
+      "title": "해골 병사",
+      "titleEn": "Skeleton",
+      "kind": "sprite",
+      "role": "enemy",
+      "path": "0x72-dungeontileset-ii-skeleton/",
+      "files": [
+        "skeleton_idle.png",
+        "skeleton_run.png"
+      ],
+      "multi": true,
+      "style": "pixel",
+      "pixelArt": true,
+      "pixelSize": 16,
+      "width": 16,
+      "height": 16,
+      "tile": null,
+      "anims": [
+        {
+          "key": "idle",
+          "dir": null,
+          "file": "skeleton_idle.png",
+          "fw": 16,
+          "fh": 16,
+          "frames": 4,
+          "fps": 10,
+          "loop": true
+        },
+        {
+          "key": "run",
+          "dir": null,
+          "file": "skeleton_run.png",
+          "fw": 16,
+          "fh": 16,
+          "frames": 4,
+          "fps": 14,
+          "loop": true
+        }
+      ],
+      "layers": null,
+      "durationMs": null,
+      "loop": false,
+      "bpm": null,
+      "license": "CC0",
+      "creditRequired": false,
+      "creator": "0x72 (Robert)",
+      "sourceUrl": "https://0x72.itch.io/dungeontileset-ii",
+      "attribution": null
+    },
+    {
+      "slug": "0x72-dungeontileset-ii-treasure-chest",
+      "title": "보물상자",
+      "titleEn": "Treasure Chest",
+      "kind": "sprite",
+      "role": "prop",
+      "path": "0x72-dungeontileset-ii-treasure-chest/treasure-chest_open.png",
+      "files": [
+        "treasure-chest_open.png"
+      ],
+      "multi": false,
+      "style": "pixel",
+      "pixelArt": true,
+      "pixelSize": 16,
+      "width": 16,
+      "height": 16,
+      "tile": null,
+      "anims": [
+        {
+          "key": "open",
+          "dir": null,
+          "file": "treasure-chest_open.png",
+          "fw": 16,
+          "fh": 16,
+          "frames": 3,
+          "fps": 10,
+          "loop": false
+        }
+      ],
+      "layers": null,
+      "durationMs": null,
+      "loop": false,
+      "bpm": null,
+      "license": "CC0",
+      "creditRequired": false,
+      "creator": "0x72 (Robert)",
+      "sourceUrl": "https://0x72.itch.io/dungeontileset-ii",
+      "attribution": null
+    },
+    {
+      "slug": "admurin-pixel-art-bosses-gollux",
+      "title": "바위 거인 보스",
+      "titleEn": "Gollux",
+      "kind": "sprite",
+      "role": "enemy",
+      "path": "admurin-pixel-art-bosses-gollux/",
+      "files": [
+        "gollux_idle.png",
+        "gollux_walk.png",
+        "gollux_attack.png",
+        "gollux_hit.png"
+      ],
+      "multi": true,
+      "style": "pixel",
+      "pixelArt": true,
+      "pixelSize": 128,
+      "width": 108,
+      "height": 92,
+      "tile": null,
+      "anims": [
+        {
+          "key": "idle",
+          "dir": null,
+          "file": "gollux_idle.png",
+          "fw": 108,
+          "fh": 92,
+          "frames": 5,
+          "fps": 12,
+          "loop": true
+        },
+        {
+          "key": "walk",
+          "dir": null,
+          "file": "gollux_walk.png",
+          "fw": 108,
+          "fh": 92,
+          "frames": 8,
+          "fps": 12,
+          "loop": true
+        },
+        {
+          "key": "attack",
+          "dir": null,
+          "file": "gollux_attack.png",
+          "fw": 108,
+          "fh": 92,
+          "frames": 19,
+          "fps": 12,
+          "loop": false
+        },
+        {
+          "key": "hit",
+          "dir": null,
+          "file": "gollux_hit.png",
+          "fw": 108,
+          "fh": 92,
+          "frames": 4,
+          "fps": 12,
+          "loop": false
+        }
+      ],
+      "layers": null,
+      "durationMs": null,
+      "loop": false,
+      "bpm": null,
+      "license": "CC-BY-4.0",
+      "creditRequired": true,
+      "creator": "Admurin",
+      "sourceUrl": "https://opengameart.org/content/pixel-art-bosses",
+      "attribution": "Pixel Art Bosses by Admurin (https://admurin.itch.io/) - CC-BY 4.0 - https://opengameart.org/content/pixel-art-bosses"
+    },
+    {
+      "slug": "ansimuz-gothicvania-patreon-collection-fire-skull",
+      "title": "불꽃 해골",
+      "titleEn": "Fire Skull",
+      "kind": "sprite",
+      "role": "enemy",
+      "path": "ansimuz-gothicvania-patreon-collection-fire-skull/fire-skull_fly.png",
+      "files": [
+        "fire-skull_fly.png"
+      ],
+      "multi": false,
+      "style": "pixel",
+      "pixelArt": true,
+      "pixelSize": 32,
+      "width": 96,
+      "height": 112,
+      "tile": null,
+      "anims": [
+        {
+          "key": "fly",
+          "dir": null,
+          "file": "fire-skull_fly.png",
+          "fw": 96,
+          "fh": 112,
+          "frames": 8,
+          "fps": 12,
+          "loop": true
+        }
+      ],
+      "layers": null,
+      "durationMs": null,
+      "loop": false,
+      "bpm": null,
+      "license": "CC0",
+      "creditRequired": false,
+      "creator": "Luis Zuno (ansimuz)",
+      "sourceUrl": "https://opengameart.org/content/gothicvania-patreons-collection",
+      "attribution": null
+    },
+    {
+      "slug": "grafxkid-sprite-packs-wispy-fire",
+      "title": "도깨비불",
+      "titleEn": "Wispy Fire",
+      "kind": "sprite",
+      "role": "enemy",
+      "path": "grafxkid-sprite-packs-wispy-fire/",
+      "files": [
+        "wispy-fire_idle.png",
+        "wispy-fire_hit.png",
+        "wispy-fire_death.png"
+      ],
+      "multi": true,
+      "style": "pixel",
+      "pixelArt": true,
+      "pixelSize": 16,
+      "width": 32,
+      "height": 32,
+      "tile": null,
+      "anims": [
+        {
+          "key": "idle",
+          "dir": null,
+          "file": "wispy-fire_idle.png",
+          "fw": 32,
+          "fh": 32,
+          "frames": 21,
+          "fps": 10,
+          "loop": true
+        },
+        {
+          "key": "hit",
+          "dir": null,
+          "file": "wispy-fire_hit.png",
+          "fw": 32,
+          "fh": 32,
+          "frames": 5,
+          "fps": 12,
+          "loop": false
+        },
+        {
+          "key": "death",
+          "dir": null,
+          "file": "wispy-fire_death.png",
+          "fw": 32,
+          "fh": 32,
+          "frames": 10,
+          "fps": 10,
+          "loop": false
+        }
+      ],
+      "layers": null,
+      "durationMs": null,
+      "loop": false,
+      "bpm": null,
+      "license": "CC0",
+      "creditRequired": false,
+      "creator": "GrafxKid",
+      "sourceUrl": "https://grafxkid.itch.io/sprite-pack-5",
+      "attribution": null
+    },
+    {
+      "slug": "kenney-tiny-dungeon-chest",
+      "title": "보물 상자",
+      "titleEn": "Treasure Chest",
+      "kind": "sprite",
+      "role": "item",
+      "path": "kenney-tiny-dungeon-chest/chest.png",
+      "files": [
+        "chest.png"
+      ],
+      "multi": false,
+      "style": "pixel",
+      "pixelArt": true,
+      "pixelSize": 16,
+      "width": 16,
+      "height": 16,
+      "tile": null,
+      "anims": null,
+      "layers": null,
+      "durationMs": null,
+      "loop": false,
+      "bpm": null,
+      "license": "CC0",
+      "creditRequired": false,
+      "creator": "Kenney",
+      "sourceUrl": "https://kenney.nl/assets/tiny-dungeon",
+      "attribution": null
+    },
+    {
+      "slug": "kenney-tiny-dungeon-green-slime-ghost",
+      "title": "초록 슬라임",
+      "titleEn": "Green Slime",
+      "kind": "sprite",
+      "role": "enemy",
+      "path": "kenney-tiny-dungeon-green-slime-ghost/green-slime-ghost.png",
+      "files": [
+        "green-slime-ghost.png"
+      ],
+      "multi": false,
+      "style": "pixel",
+      "pixelArt": true,
+      "pixelSize": 16,
+      "width": 16,
+      "height": 16,
+      "tile": null,
+      "anims": null,
+      "layers": null,
+      "durationMs": null,
+      "loop": false,
+      "bpm": null,
+      "license": "CC0",
+      "creditRequired": false,
+      "creator": "Kenney",
+      "sourceUrl": "https://kenney.nl/assets/tiny-dungeon",
+      "attribution": null
+    }
+  ]
+}
