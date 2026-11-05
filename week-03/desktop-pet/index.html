@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>피아노 고양이</title>
+  <style>
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: transparent;
+    }
+
+    /* 그림 한 장(2 × 2 칸)을 500 × 500 으로 줄이면 한 칸이 250 × 250 이 된다 */
+    #cat {
+      width: 250px;
+      height: 250px;
+      background-image: url('../art/sheet.png');
+      background-size: 500px 500px;
+      background-repeat: no-repeat;
+    }
+
+    /* 칸 위치: ① 두 손 / ② 오른손 / ③ 왼손 / ④ 눈 감기 */
+    .both-paws  { background-position: 0      0; }
+    .right-paw  { background-position: -250px 0; }
+    .left-paw   { background-position: 0      -250px; }
+    .sleeping   { background-position: -250px -250px; }
+  </style>
+</head>
+<body>
+  <div id="cat" class="right-paw"></div>
+</body>
+</html>
