@@ -1,0 +1,1363 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>칼 한 자루 보스 사냥</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0b0b10; overflow: hidden; }
+  body { display: flex; align-items: center; justify-content: center; }
+  canvas { width: min(100vw, calc(100vh * 16 / 9)); aspect-ratio: 16 / 9; background: #000; display: block; }
+</style>
+</head>
+<body>
+<canvas id="c" width="960" height="540"></canvas>
+<script>
+// ===== 기본 설정 =====
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const W = 960, H = 540, GROUND = 470, GRAV = 2000;
+const FONT = '"Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
+
+// ===== 그림 불러오기 (Lectio Drop 에셋) =====
+// 프레임 정보는 drop.json 에서 옮겨 적었어요. (index.html 을 두 번 눌러 열면 json 을 못 읽기 때문)
+// ax, ay = 그림 안에서 몸의 기준점 (가운데 아래 또는 가운데)
+const IMG = {};
+function img(name) {
+  if (!IMG[name]) { IMG[name] = new Image(); IMG[name].src = `assets/images/${name}.png`; }
+  return IMG[name];
+}
+const ANIM = {
+  demonIdle: { img: img('big-demon_idle'),      fw: 32,  fh: 36,  n: 4,  fps: 10, loop: true,  ax: 15.5, ay: 36 },
+  demonRun:  { img: img('big-demon_run'),       fw: 32,  fh: 36,  n: 4,  fps: 14, loop: true,  ax: 15.5, ay: 36 },
+  skullFly:  { img: img('fire-skull_fly'),      fw: 96,  fh: 112, n: 8,  fps: 12, loop: true,  ax: 46,   ay: 66 },
+  golIdle:   { img: img('gollux_idle'),         fw: 108, fh: 92,  n: 5,  fps: 12, loop: true,  ax: 35,   ay: 92 },
+  golWalk:   { img: img('gollux_walk'),         fw: 108, fh: 92,  n: 8,  fps: 12, loop: true,  ax: 35,   ay: 92 },
+  golAtk:    { img: img('gollux_attack'),       fw: 108, fh: 92,  n: 19, fps: 12, loop: false, ax: 35,   ay: 92 },
+  golHit:    { img: img('gollux_hit'),          fw: 108, fh: 92,  n: 4,  fps: 12, loop: false, ax: 35,   ay: 92 },
+  wisp:      { img: img('wispy-fire_idle'),     fw: 32,  fh: 32,  n: 21, fps: 10, loop: true,  ax: 15.5, ay: 17 },
+  wispHit:   { img: img('wispy-fire_hit'),      fw: 32,  fh: 32,  n: 5,  fps: 12, loop: false, ax: 15.5, ay: 17 },
+  wispDie:   { img: img('wispy-fire_death'),    fw: 32,  fh: 32,  n: 10, fps: 10, loop: false, ax: 15.5, ay: 17 },
+  mud:       { img: img('mud-blob_idle'),       fw: 16,  fh: 16,  n: 4,  fps: 10, loop: true,  ax: 8,    ay: 9 },
+  slimeWalk: { img: img('blue-slime_walk'),     fw: 22,  fh: 15,  n: 10, fps: 10, loop: true,  ax: 14.5, ay: 15 },
+  slimeDie:  { img: img('blue-slime_death'),    fw: 22,  fh: 15,  n: 10, fps: 10, loop: false, ax: 14.5, ay: 15 },
+  slimeWave: { img: img('blue-slime_wave'),     fw: 22,  fh: 15,  n: 10, fps: 10, loop: true,  ax: 14.5, ay: 15 },
+  chest:     { img: img('treasure-chest_open'), fw: 16,  fh: 16,  n: 3,  fps: 10, loop: false, ax: 8,    ay: 16 },
+  // 보스 4 지옥 야수 (왼쪽을 보는 그림). 크기는 drop.json 의 실제 값 (공격 74×160, 쏘기 64×64)
+  beastIdle:  { img: img('hell-beast_idle'),   fw: 55, fh: 67,  n: 6, fps: 10, loop: true,  ax: 28, ay: 67 },
+  beastAtk:   { img: img('hell-beast_attack'), fw: 74, fh: 160, n: 6, fps: 14, loop: false, ax: 33, ay: 160 },
+  beastShoot: { img: img('hell-beast_shoot'),  fw: 64, fh: 64,  n: 4, fps: 14, loop: true,  ax: 35, ay: 64 },
+  // 보스 5 해골 왕 (오른쪽을 보는 그림)
+  skelWalk:   { img: img('pixel-skeleton_walk_right'),  fw: 36, fh: 48, n: 10, fps: 10, loop: true,  ax: 18, ay: 46 },
+  skelDie:    { img: img('pixel-skeleton_death_right'), fw: 36, fh: 48, n: 5,  fps: 8,  loop: false, ax: 18, ay: 46 },
+  // 부하: 빨간 꼬리 눈알 (왼쪽을 봄), 조약돌 몬스터
+  eyeFly:     { img: img('eyeball_fly'),   fw: 20, fh: 20, n: 8, fps: 12, loop: true,  ax: 10, ay: 9 },
+  eyeIdle:    { img: img('eyeball_idle'),  fw: 20, fh: 20, n: 8, fps: 10, loop: true,  ax: 9,  ay: 10 },
+  pebbleRun:  { img: img('pebble_run'),    fw: 29, fh: 32, n: 5, fps: 10, loop: true,  ax: 9,  ay: 17 },
+  pebbleIdle: { img: img('pebble_idle'),   fw: 29, fh: 32, n: 4, fps: 10, loop: true,  ax: 9,  ay: 17 },
+  pebbleDie:  { img: img('pebble_death'),  fw: 29, fh: 32, n: 7, fps: 10, loop: false, ax: 9,  ay: 17 },
+  // 내 캐릭터: 영웅 기사 (오른쪽을 보고 있는 그림)
+  heroIdle:  { img: img('hero-knight_idle'),     fw: 134, fh: 83, n: 11, fps: 10, loop: true,  ax: 48, ay: 81 },
+  heroRun:   { img: img('hero-knight_run'),      fw: 134, fh: 83, n: 8,  fps: 14, loop: true,  ax: 48, ay: 81 },
+  heroJump:  { img: img('hero-knight_jump'),     fw: 134, fh: 83, n: 3,  fps: 10, loop: true,  ax: 48, ay: 81 },
+  heroFall:  { img: img('hero-knight_fall'),     fw: 134, fh: 83, n: 3,  fps: 10, loop: true,  ax: 48, ay: 81 },
+  heroAtk:   { img: img('hero-knight_attack'),   fw: 134, fh: 83, n: 7,  fps: 14, loop: false, ax: 48, ay: 81 },
+  heroAtk2:  { img: img('hero-knight_attack_2'), fw: 134, fh: 83, n: 7,  fps: 14, loop: false, ax: 48, ay: 81 },
+  heroHit:   { img: img('hero-knight_hit'),      fw: 134, fh: 83, n: 4,  fps: 12, loop: false, ax: 48, ay: 81 },
+  heroDie:   { img: img('hero-knight_death'),    fw: 134, fh: 83, n: 11, fps: 10, loop: false, ax: 48, ay: 81 },
+};
+const frameAt = (key, t) => {
+  const a = ANIM[key], f = Math.floor(t * a.fps);
+  return a.loop ? f % a.n : Math.min(a.n - 1, f);
+};
+const animDone = (key, t) => t * ANIM[key].fps >= ANIM[key].n;
+// 한 프레임 그리기. (x, y) 에 기준점이 오도록. 아직 안 불러졌으면 false
+function drawFrame(key, f, x, y, scale, flip, filter) {
+  const a = ANIM[key], im = a.img;
+  if (!im.complete || !im.naturalWidth) return false;
+  ctx.save();
+  ctx.translate(x, y);
+  if (flip) ctx.scale(-1, 1);
+  if (filter) ctx.filter = filter;
+  ctx.drawImage(im, f * a.fw, 0, a.fw, a.fh, -a.ax * scale, -a.ay * scale, a.fw * scale, a.fh * scale);
+  ctx.restore();
+  return true;
+}
+const drawAnim = (key, t, x, y, scale, flip, filter) => drawFrame(key, frameAt(key, t), x, y, scale, flip, filter);
+const bossFilter = b => b.flash > 0 ? 'brightness(3)' : (b.ph2 ? 'saturate(1.6) brightness(1.15)' : null);
+// 그림을 아직 못 불러왔을 때 대신 보여 줄 네모
+const box = (o, col) => { ctx.fillStyle = col; ctx.fillRect(o.x, o.y, o.w, o.h); };
+
+// ===== 키보드 =====
+const down = new Set(), hit = new Set();
+addEventListener('keydown', e => {
+  if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space'].includes(e.code)) e.preventDefault();
+  if (!down.has(e.code)) hit.add(e.code);
+  down.add(e.code);
+});
+addEventListener('keyup', e => down.delete(e.code));
+// 마우스: 왼쪽 버튼 = 베기, 오른쪽 버튼 = 패링 (마우스 위치는 쓰지 않음)
+cv.addEventListener('mousedown', e => {
+  e.preventDefault();
+  const code = 'Mouse' + e.button;
+  if (!down.has(code)) hit.add(code);
+  down.add(code);
+});
+addEventListener('mouseup', e => down.delete('Mouse' + e.button));
+cv.addEventListener('contextmenu', e => e.preventDefault());   // 오른쪽 클릭 메뉴 안 뜨게
+const K = {
+  left: ['ArrowLeft', 'KeyA'], right: ['ArrowRight', 'KeyD'], down: ['ArrowDown', 'KeyS'],
+  jump: ['Space', 'ArrowUp', 'KeyW'], atk: ['Mouse0', 'KeyZ', 'KeyJ'],
+  dash: ['KeyX', 'KeyK', 'ShiftLeft', 'ShiftRight'], start: ['Enter', 'Space'], retry: ['KeyR'],
+  parry: ['KeyF', 'Mouse2'], shoot: ['KeyE', 'KeyL'], up: ['KeyW', 'ArrowUp'],
+};
+const held = k => K[k].some(c => down.has(c));
+const tap = k => K[k].some(c => hit.has(c));
+
+// ===== 도구 =====
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const rand = (a, b) => a + Math.random() * (b - a);
+const overlap = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+function circleRect(cx, cy, r, b) {
+  const nx = clamp(cx, b.x, b.x + b.w), ny = clamp(cy, b.y, b.y + b.h);
+  return (cx - nx) ** 2 + (cy - ny) ** 2 < r * r;
+}
+
+// ===== 게임 상태 =====
+let state = 'title', stateT = 0, bossIdx = 0, boss = null, player = null;
+let shots = [], waves = [], bolts = [], parts = [], mobs = [], fx = [], chest = null;
+let shake = 0, runTime = 0, falls = 0, clock = 0, freeze = 0, popups = [];
+
+function newPlayer(hp) {
+  return { x: 120, y: GROUND - 62, w: 30, h: 62, vx: 0, vy: 0, face: 1, onGround: true,
+    hp, maxHp: 5, inv: 0, hurtT: 0, atk: 0, atkCd: 0, atkDown: false, swingHit: false, dash: 0, dashCd: 0,
+    atkT: 9, combo: 0, hitAnimT: 9, parry: 0, parryCd: 0, parryT: 9, parryFlash: 0,
+    ammo: 3, ammoT: 0, shootCd: 0 };
+}
+
+function burst(x, y, col, n, spd) {
+  for (let i = 0; i < n; i++) {
+    const a = rand(0, Math.PI * 2), s = rand(spd * 0.3, spd);
+    parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 100, life: rand(0.3, 0.7), col, size: rand(2, 5) });
+  }
+}
+// 한 번 재생하고 사라지는 그림 (도깨비불 꺼짐, 슬라임 쓰러짐)
+const playFx = (key, x, y, scale, flip = false) => fx.push({ key, x, y, scale, flip, t: 0 });
+
+// ===== 보스 1: 큰 악마 =====
+function makeDemon() {
+  return {
+    name: '큰 악마', maxHp: 18, hp: 18, x: 760, y: GROUND - 100, w: 76, h: 100,
+    vx: 0, vy: 0, face: -1, st: 'idle', t: 1.2, flash: 0, ph2: false,
+    pal: { sky1: '#2b3a67', sky2: '#e08a5b', hill: '#3b4a5a', ground: '#3b2a1e', top: '#5a8f3c' },
+    update(dt) {
+      const pc = player.x + player.w / 2, bc = this.x + this.w / 2;
+      if (!this.ph2 && this.hp <= this.maxHp / 2) { this.ph2 = true; burst(bc, this.y, '#ff5544', 30, 300); }
+      this.t -= dt;
+      if (this.st === 'idle') {
+        this.vx = 0; this.face = pc < bc ? -1 : 1;
+        if (this.t <= 0) {
+          if (Math.random() < 0.65) { this.st = 'windup'; this.t = this.ph2 ? 0.4 : 0.6; }
+          else { this.st = 'hop'; this.vy = -820; this.vx = clamp((pc - bc) * 1.1, -380, 380); }
+        }
+      } else if (this.st === 'windup') {
+        if (this.t <= 0) { this.st = 'charge'; this.vx = this.face * (this.ph2 ? 640 : 520); }
+      } else if (this.st === 'charge') {
+        if (this.x <= 0 || this.x + this.w >= W) {
+          this.x = clamp(this.x, 0, W - this.w);
+          this.st = 'stun'; this.t = 1.3; this.vx = 0; shake = 10;
+          burst(this.face > 0 ? W : 0, GROUND - 40, '#c9a46b', 18, 250);
+          // 화나면 벽에 부딪힐 때 진흙 덩어리가 떨어짐
+          if (this.ph2) for (let i = 0; i < 4; i++) shots.push({ x: rand(60, W - 60), y: rand(-160, -20), vx: 0, vy: 0, r: 16, g: 900, kind: 'mud' });
+        }
+      } else if (this.st === 'hop') {
+        this.vy += GRAV * dt;
+        if (this.y + this.h >= GROUND && this.vy > 0) {
+          this.y = GROUND - this.h; this.vy = 0; this.vx = 0; this.st = 'idle'; this.t = this.ph2 ? 0.5 : 0.8; shake = 6;
+          if (this.ph2) spawnWaves(this.x, this.x + this.w, 360);
+        }
+      } else if (this.st === 'stun') {
+        if (this.t <= 0) { this.st = 'idle'; this.t = 0.5; }
+      }
+      this.x = clamp(this.x + this.vx * dt, 0, W - this.w);
+      this.y += this.vy * dt;
+    },
+    draw() {
+      const jit = this.st === 'windup' ? rand(-3, 3) : 0;
+      const key = (this.st === 'charge' || this.st === 'windup' || this.st === 'hop') ? 'demonRun' : 'demonIdle';
+      const speed = this.st === 'windup' ? 2 : 1;
+      if (!drawAnim(key, clock * speed, this.x + this.w / 2 + jit, this.y + this.h, 3.5, this.face < 0, bossFilter(this)))
+        box(this, '#a33');
+      if (this.st === 'stun') drawStars(this.x + this.w / 2, this.y - 6);
+    },
+  };
+}
+
+// ===== 보스 2: 불꽃 해골 =====
+function makeSkull() {
+  return {
+    name: '불꽃 해골', maxHp: 22, hp: 22, x: 430, y: 110, w: 80, h: 80,
+    st: 'hover', t: 1.6, flash: 0, ph2: false, next: 'bolt', tx: 0, ty: 0, face: -1, slimeT: 3,
+    pal: { sky1: '#0e0a1f', sky2: '#3a2a5e', hill: '#211a36', ground: '#2a2433', top: '#6b5b8a' },
+    update(dt) {
+      const pc = player.x + player.w / 2, bc = this.x + this.w / 2;
+      if (!this.ph2 && this.hp <= this.maxHp / 2) { this.ph2 = true; burst(bc, this.y + 30, '#ffb347', 30, 300); }
+      if (this.st !== 'dive') this.face = pc < bc ? -1 : 1;
+      this.t -= dt;
+      // 부하 파란 슬라임이 옆에서 기어 옴
+      this.slimeT -= dt;
+      if (this.slimeT <= 0 && mobs.length < (this.ph2 ? 3 : 2)) {
+        this.slimeT = this.ph2 ? 3 : 5;
+        const fromLeft = pc > W / 2;
+        mobs.push({ kind: 'slime', x: fromLeft ? -36 : W, y: GROUND - 30, w: 36, h: 30, dir: fromLeft ? 1 : -1, t: 0 });
+      }
+      if (this.st === 'hover') {
+        const tx = clamp(pc - this.w / 2, 0, W - this.w);
+        this.x += (tx - this.x) * 1.2 * dt;
+        this.y = 110 + Math.sin(clock * 3) * 20;
+        if (this.t <= 0) {
+          if (this.next === 'bolt') {
+            const offs = this.ph2 ? [-340, -170, 0, 170, 340] : [-170, 0, 170];
+            offs.forEach(o => bolts.push({ x: clamp(pc + o, 20, W - 20), t: 0.75, on: 0.3 }));
+            this.st = 'boltwait'; this.t = 1.2;
+          } else {
+            this.st = 'aim'; this.t = this.ph2 ? 0.35 : 0.45;
+          }
+          this.next = Math.random() < 0.5 ? 'bolt' : 'dive';
+        }
+      } else if (this.st === 'boltwait') {
+        this.y = 110 + Math.sin(clock * 3) * 20;
+        if (this.t <= 0) { this.st = 'hover'; this.t = this.ph2 ? 1.0 : 1.4; }
+      } else if (this.st === 'aim') {
+        this.tx = clamp(pc - this.w / 2, 0, W - this.w); this.ty = GROUND - this.h;
+        if (this.t <= 0) this.st = 'dive';
+      } else if (this.st === 'dive') {
+        const dx = this.tx - this.x, dy = this.ty - this.y, d = Math.hypot(dx, dy), sp = (this.ph2 ? 820 : 700) * dt;
+        if (d <= sp) { this.x = this.tx; this.y = this.ty; this.st = 'rest'; this.t = this.ph2 ? 0.7 : 1.0; shake = 6; burst(this.x + this.w / 2, GROUND, '#ff9a3c', 14, 200); }
+        else { this.x += dx / d * sp; this.y += dy / d * sp; }
+      } else if (this.st === 'rest') {
+        if (this.t <= 0) this.st = 'rise';
+      } else if (this.st === 'rise') {
+        this.y -= 300 * dt;
+        if (this.y <= 110) { this.y = 110; this.st = 'hover'; this.t = this.ph2 ? 1.0 : 1.4; }
+      }
+    },
+    draw() {
+      const jit = this.st === 'aim' ? rand(-4, 4) : 0;
+      const speed = this.st === 'aim' || this.st === 'dive' ? 2 : (this.st === 'rest' ? 0.4 : 1);
+      // 그림은 왼쪽을 보고 있어서 오른쪽을 볼 때 뒤집음
+      if (!drawAnim('skullFly', clock * speed, this.x + this.w / 2 + jit, this.y + this.h / 2, 1.3, this.face > 0, bossFilter(this)))
+        box(this, '#e65');
+      if (this.st === 'rest') drawStars(this.x + this.w / 2, this.y - 10);
+    },
+  };
+}
+
+// ===== 보스 3: 바위 거인 =====
+function makeGolem() {
+  return {
+    name: '바위 거인', maxHp: 24, hp: 24, x: 720, y: GROUND - 140, w: 130, h: 140,   // 쉽게: 체력 30 → 24
+    st: 'walk', t: 1.5, t0: 1, flash: 0, ph2: false, face: -1, at: 0, slammed: false, second: 0, hitT: 0,
+    pal: { sky1: '#2a0a0a', sky2: '#a8361c', hill: '#3a1410', ground: '#2b1a14', top: '#e0622b' },
+    update(dt) {
+      const pc = player.x + player.w / 2, bc = this.x + this.w / 2;
+      if (!this.ph2 && this.hp <= this.maxHp / 2) { this.ph2 = true; burst(bc, this.y + 40, '#ffb347', 40, 340); shake = 10; }
+      this.t -= dt; this.hitT = Math.max(0, this.hitT - dt);
+      if (this.second > 0) { this.second -= dt; if (this.second <= 0) { spawnWaves(this.x, this.x + this.w, 360); shake = 10; } }
+      if (this.st === 'walk') {
+        this.face = pc < bc ? -1 : 1;
+        // 쉽게: 기사 바로 앞(칼 닿는 거리)에서 멈춤. 몸으로 밀고 들어오지 않음
+        this.moving = Math.abs(pc - bc) > this.w / 2 + 70;
+        if (this.moving) this.x = clamp(this.x + this.face * (this.ph2 ? 70 : 50) * dt, 0, W - this.w);
+        if (this.t <= 0) {
+          const near = Math.abs(pc - bc) < 220;
+          this.st = (near || Math.random() < 0.5) ? 'stomp' : 'throw';
+          this.at = 0; this.slammed = false;
+          this.t = this.t0 = 0.5;
+        }
+      } else if (this.st === 'stomp') {
+        // 공격 그림 5번째 프레임에서 땅을 내려찍음
+        this.at += dt * (this.ph2 ? 1.1 : 0.85);   // 쉽게: 내려찍기 전 준비 동작을 더 느리게
+        if (!this.slammed && frameAt('golAtk', this.at) >= 5) {
+          this.slammed = true; shake = 14;
+          spawnWaves(this.x, this.x + this.w, 340);   // 쉽게: 충격파 430 → 340
+          burst(bc + this.face * 50, GROUND, '#c9b8a0', 20, 300);
+          if (this.ph2) this.second = 0.8;   // 쉽게: 두 번째 충격파까지 0.4 → 0.8초
+        }
+        if (frameAt('golAtk', this.at) >= 12) { this.st = 'walk'; this.t = this.ph2 ? 1.3 : 1.8; }
+      } else if (this.st === 'throw') {
+        if (this.t <= 0) {
+          const offs = this.ph2 ? [-150, 0, 150] : [-90, 90];   // 쉽게: 도깨비불 3/5개 → 2/3개
+          const sx = bc + this.face * 10, sy = this.y + 10, T = 1.3, g = 900;
+          offs.forEach(o => {
+            const tx = clamp(pc + o, 10, W - 10), ty = GROUND - 10;
+            shots.push({ x: sx, y: sy, vx: (tx - sx) / T, vy: (ty - sy - 0.5 * g * T * T) / T, r: 13, g, kind: 'wisp' });
+          });
+          this.st = 'recover'; this.t = 1.1;
+        }
+      } else if (this.st === 'recover') {
+        if (this.t <= 0) { this.st = 'walk'; this.t = this.ph2 ? 1.4 : 1.9; }
+      }
+    },
+    onHit() { if (this.st === 'walk' || this.st === 'recover') this.hitT = 0.33; },
+    draw() {
+      const x = this.x + this.w / 2, y = this.y + this.h, S = 2.4, flip = this.face < 0, fl = bossFilter(this);
+      let ok;
+      if (this.st === 'stomp') ok = drawAnim('golAtk', this.at, x, y, S, flip, fl);
+      else if (this.st === 'throw') ok = drawFrame('golAtk', Math.min(4, Math.floor((1 - this.t / this.t0) * 5)), x, y, S, flip, fl);
+      else if (this.hitT > 0) ok = drawAnim('golHit', 0.33 - this.hitT, x, y, S, flip, fl);
+      else if (this.st === 'walk' && this.moving) ok = drawAnim('golWalk', clock * (this.ph2 ? 1.5 : 1), x, y, S, flip, fl);
+      else ok = drawAnim('golIdle', clock, x, y, S, flip, fl);
+      if (!ok) box(this, '#654');
+      // 던지기 준비: 손 위에 도깨비불이 커짐
+      if (this.st === 'throw') {
+        const k = 1 - this.t / this.t0;
+        drawAnim('wisp', clock, this.x + this.w / 2 + this.face * 10, this.y + 4, 1 + k);
+      }
+    },
+  };
+}
+
+// ===== 보스 4: 지옥 야수 =====
+// 불덩이를 연달아 뱉고, 몸을 불기둥으로 바꿔 사라졌다가 기사 발밑에서 불기둥과 함께 나타남
+function makeBeast() {
+  return {
+    name: '지옥 야수', maxHp: 34, hp: 34, x: 740, y: GROUND - 135, w: 90, h: 135,
+    st: 'idle', t: 1.2, at: 0, flash: 0, ph2: false, face: -1, hidden: false,
+    shotsLeft: 0, shotT: 0, eyeT: 2, next: 'shoot', tx: 0,
+    pal: { ground: '#1a0606' },
+    update(dt) {
+      const pc = player.x + player.w / 2, bc = this.x + this.w / 2;
+      if (!this.ph2 && this.hp <= this.maxHp / 2) { this.ph2 = true; burst(bc, this.y + 40, '#ff3b1f', 40, 340); shake = 10; }
+      this.t -= dt; this.at += dt;
+      // 화나면 빨간 꼬리 눈알을 불러냄
+      if (this.ph2 && !this.hidden) {
+        this.eyeT -= dt;
+        if (this.eyeT <= 0 && mobs.filter(m => m.kind === 'eye').length < 3) {
+          this.eyeT = 3.5;
+          mobs.push({ kind: 'eye', x: bc - 17, y: this.y - 10, w: 34, h: 30, dir: this.face, t: 0 });
+          burst(bc, this.y, '#ff5a6a', 10, 180);
+        }
+      }
+      if (this.st === 'idle') {
+        this.face = pc < bc ? -1 : 1;
+        if (this.t <= 0) {
+          if (this.next === 'shoot') { this.st = 'shoot'; this.at = 0; this.shotsLeft = this.ph2 ? 5 : 3; this.shotT = 0.35; }
+          else { this.st = 'crouch'; this.at = 0; this.t = 0.55; }
+          this.next = Math.random() < 0.5 ? 'shoot' : 'erupt';
+        }
+      } else if (this.st === 'shoot') {
+        this.shotT -= dt;
+        if (this.shotT <= 0 && this.shotsLeft > 0) {
+          this.shotsLeft--; this.shotT = 0.3;
+          const sx = bc + this.face * 40, sy = this.y + 45;
+          const dx = pc - sx, dy = player.y + 25 - sy, d = Math.hypot(dx, dy) || 1, sp = this.ph2 ? 480 : 420;
+          shots.push({ x: sx, y: sy, vx: dx / d * sp, vy: dy / d * sp, r: 12, g: 0, kind: 'fire' });
+        }
+        if (this.shotsLeft === 0 && this.shotT <= 0) { this.st = 'idle'; this.t = this.ph2 ? 0.8 : 1.1; }
+      } else if (this.st === 'crouch') {
+        if (this.t <= 0) {
+          this.st = 'pillar'; this.at = 0; this.t = 0.6; shake = 8;
+          bolts.push({ x: bc, t: 0, on: 0.6, hide: true });   // 몸이 불기둥이 됨 (닿으면 다침)
+        }
+      } else if (this.st === 'pillar') {
+        if (this.t <= 0) {
+          // 사라진 뒤 기사 발밑에 불기둥 예고 → 그 자리에서 나타남
+          this.st = 'gone'; this.hidden = true;
+          this.tx = clamp(pc, 60, W - 60);
+          bolts.push({ x: this.tx, t: 0.8, on: 0.35 });
+          if (this.ph2) [-220, 220].forEach(o => bolts.push({ x: clamp(this.tx + o, 20, W - 20), t: 0.8, on: 0.35 }));
+          this.t = 1.15;
+        }
+      } else if (this.st === 'gone') {
+        if (this.t <= 0) {
+          this.hidden = false; this.x = clamp(this.tx - this.w / 2, 0, W - this.w);
+          this.st = 'idle'; this.t = 0.9; burst(this.x + this.w / 2, GROUND - 20, '#ff8a3c', 24, 300);
+        }
+      }
+    },
+    draw() {
+      if (this.hidden) return;
+      const x = this.x + this.w / 2, y = this.y + this.h, S = 2.3, flip = this.face > 0, fl = bossFilter(this);
+      glow(x, this.y + this.h * 0.4, this.st === 'pillar' ? 220 : 120, '255,80,30', this.st === 'pillar' ? 0.6 : 0.3);
+      let ok;
+      if (this.st === 'shoot') ok = drawAnim('beastShoot', this.at, x, y, S, flip, fl);
+      else if (this.st === 'crouch') ok = drawFrame('beastAtk', Math.min(3, Math.floor(this.at / 0.55 * 4)), x, y, S, flip, fl);
+      else if (this.st === 'pillar') ok = drawFrame('beastAtk', 4 + (Math.floor(this.at * 14) % 2), x, y, S, flip, fl);
+      else ok = drawAnim('beastIdle', clock, x, y, S, flip, fl);
+      if (!ok) box(this, '#a22');
+    },
+  };
+}
+
+// ===== 보스 5: 해골 왕 =====
+// 걸어와서 높이 뛰어 내려찍고(충격파), 뼈다귀를 던지고, 조약돌 몬스터를 굴려 보냄
+function makeBones() {
+  return {
+    name: '해골 왕', maxHp: 38, hp: 38, x: 760, y: GROUND - 140, w: 70, h: 140,
+    st: 'walk', t: 1.4, t0: 1, flash: 0, ph2: false, face: -1, vx: 0, vy: 0, pebT: 2.5, moving: false,
+    pal: { ground: '#10141f' },
+    update(dt) {
+      const pc = player.x + player.w / 2, bc = this.x + this.w / 2;
+      if (!this.ph2 && this.hp <= this.maxHp / 2) { this.ph2 = true; burst(bc, this.y + 40, '#bfe0ff', 40, 340); shake = 10; }
+      this.t -= dt;
+      this.pebT -= dt;
+      if (this.pebT <= 0 && mobs.filter(m => m.kind === 'pebble').length < (this.ph2 ? 4 : 2)) {
+        this.pebT = this.ph2 ? 2.2 : 3.5;
+        const fromLeft = Math.random() < 0.5;
+        mobs.push({ kind: 'pebble', x: fromLeft ? -30 : W, y: GROUND - 30, w: 30, h: 30, dir: fromLeft ? 1 : -1, t: 0 });
+      }
+      if (this.st === 'walk') {
+        this.face = pc < bc ? -1 : 1;
+        this.moving = Math.abs(pc - bc) > 30;
+        if (this.moving) this.x = clamp(this.x + this.face * (this.ph2 ? 120 : 80) * dt, 0, W - this.w);
+        if (this.t <= 0) {
+          this.st = Math.random() < 0.45 ? 'crouch' : 'throw';
+          this.t = this.t0 = this.st === 'crouch' ? (this.ph2 ? 0.3 : 0.4) : 0.45;
+        }
+      } else if (this.st === 'crouch') {
+        if (this.t <= 0) {
+          this.st = 'air'; this.vy = -950;
+          this.vx = clamp((pc - bc) / 0.95, -600, 600);
+        }
+      } else if (this.st === 'air') {
+        this.vy += GRAV * dt;
+        this.x = clamp(this.x + this.vx * dt, 0, W - this.w);
+        this.y += this.vy * dt;
+        if (this.y + this.h >= GROUND && this.vy > 0) {
+          this.y = GROUND - this.h; this.vy = 0; shake = 14;
+          spawnWaves(this.x, this.x + this.w, this.ph2 ? 470 : 420);
+          burst(this.x + this.w / 2, GROUND, '#c9d4e8', 20, 300);
+          this.st = 'walk'; this.t = this.ph2 ? 0.9 : 1.2;
+        }
+      } else if (this.st === 'throw') {
+        if (this.t <= 0) {
+          const offs = this.ph2 ? [-150, 0, 150] : [-80, 80];
+          const sx = bc, sy = this.y + 20, T = 0.9, g = 900;
+          offs.forEach(o => {
+            const tx = clamp(pc + o, 10, W - 10), ty = GROUND - 10;
+            shots.push({ x: sx, y: sy, vx: (tx - sx) / T, vy: (ty - sy - 0.5 * g * T * T) / T, r: 12, g, kind: 'bone' });
+          });
+          this.st = 'walk'; this.t = this.ph2 ? 1.0 : 1.3;
+        }
+      }
+    },
+    draw() {
+      const jit = this.st === 'crouch' || this.st === 'throw' ? rand(-3, 3) : 0;
+      const x = this.x + this.w / 2 + jit, y = this.y + this.h, S = 3.1, flip = this.face < 0, fl = bossFilter(this);
+      glow(x, this.y + 50, 110, '170,200,255', 0.18);
+      let ok;
+      if (this.st === 'walk' && this.moving) ok = drawAnim('skelWalk', clock * (this.ph2 ? 1.5 : 1), x, y, S, flip, fl);
+      else if (this.st === 'air') ok = drawFrame('skelWalk', 2, x, y, S, flip, fl);
+      else ok = drawFrame('skelWalk', 0, x, y, S, flip, fl);
+      if (!ok) box(this, '#ddd');
+    },
+    // 쓰러질 때는 사라지지 않고 무너지는 그림
+    drawDead(t) { drawAnim('skelDie', t, this.x + this.w / 2, this.y + this.h, 3.1, this.face < 0); },
+  };
+}
+
+const MAKERS = [makeDemon, makeSkull, makeGolem, makeBeast, makeBones];
+
+function spawnWaves(left, right, speed) {
+  waves.push({ x: left, dir: -1, speed }, { x: right, dir: 1, speed });
+}
+
+function drawStars(x, y) {
+  ctx.fillStyle = '#ffe066';
+  for (let i = 0; i < 3; i++) {
+    const a = clock * 4 + i * Math.PI * 2 / 3;
+    const sx = x + Math.cos(a) * 26, sy = y + Math.sin(a) * 7;
+    ctx.beginPath();
+    for (let k = 0; k < 10; k++) {
+      const r = k % 2 ? 2.5 : 6, b = k * Math.PI / 5 - Math.PI / 2;
+      ctx.lineTo(sx + Math.cos(b) * r, sy + Math.sin(b) * r);
+    }
+    ctx.fill();
+  }
+}
+
+// ===== 흐름 =====
+function startGame() {
+  bossIdx = 0; runTime = 0; falls = 0;
+  player = newPlayer(5);
+  startBoss();
+}
+function startBoss() {
+  boss = MAKERS[bossIdx]();
+  const hp = player ? player.hp : 5;
+  player = newPlayer(hp);
+  shots = []; waves = []; bolts = []; parts = []; mobs = []; fx = []; blades = []; chest = null;
+  state = 'intro'; stateT = 0;
+}
+
+// ===== 주인공 =====
+function atkBox(p) {
+  if (p.atkDown) return { x: p.x - 14, y: p.y + p.h - 4, w: p.w + 28, h: 46 };
+  return p.face > 0 ? { x: p.x + p.w - 4, y: p.y - 8, w: 64, h: 56 } : { x: p.x - 60, y: p.y - 8, w: 64, h: 56 };
+}
+
+function updPlayer(dt) {
+  const p = player;
+  p.inv = Math.max(0, p.inv - dt); p.atkCd -= dt; p.dashCd -= dt;
+  if (p.dash > 0) {
+    p.dash -= dt; p.vx = p.face * 720; p.vy = 0;
+    if (Math.random() < 0.6) parts.push({ x: p.x + p.w / 2, y: p.y + rand(5, p.h), vx: -p.face * 80, vy: 0, life: 0.25, col: '#a6c8ff', size: 3 });
+  } else {
+    const mv = (held('right') ? 1 : 0) - (held('left') ? 1 : 0);
+    if (p.hurtT > 0) p.hurtT -= dt;
+    else { p.vx = mv * 300; if (mv) p.face = mv; }
+    if (tap('jump') && p.onGround) { p.vy = -760; p.onGround = false; }
+    if (!held('jump') && p.vy < -280) p.vy = -280;
+    if (tap('dash') && p.dashCd <= 0) {
+      if (mv) p.face = mv;
+      p.dash = 0.16; p.dashCd = 0.55;
+    }
+    p.vy += GRAV * dt;
+  }
+  // 클릭(또는 Z)하면 지금 보고 있는 쪽으로 벰. 공중에서 S(↓)를 누르고 있으면 아래 베기
+  if (tap('atk') && p.atkCd <= 0) {
+    p.atk = 0.16; p.atkCd = 0.3; p.atkDown = !p.onGround && held('down'); p.swingHit = false;
+    p.atkT = 0; p.combo = 1 - p.combo;   // 공격 그림 두 가지를 번갈아
+  }
+  if (tap('parry') && p.parryCd <= 0) {
+    p.parry = PARRY_WINDOW; p.parryCd = PARRY_CD; p.parryT = 0;
+  }
+  p.parry = Math.max(0, p.parry - dt); p.parryCd -= dt; p.parryT += dt;
+  // 검기 날리기: 3번까지, 1.5초마다 하나씩 다시 참. W(↑)를 누른 채 쓰면 비스듬히 위로
+  p.shootCd -= dt;
+  if (p.ammo < MAX_AMMO) { p.ammoT += dt; if (p.ammoT >= AMMO_TIME) { p.ammo++; p.ammoT = 0; } }
+  if (tap('shoot') && p.ammo > 0 && p.shootCd <= 0 && state !== 'dead') {
+    p.ammo--; p.shootCd = 0.25;
+    p.atkT = 0; p.combo = 0; p.atkDown = false;       // 두 번째 공격 그림으로 휘두름
+    const up = held('up'), sp = 820;
+    blades.push({ x: p.x + p.w / 2 + p.face * 20, y: p.y + p.h * 0.4, vx: p.face * sp * (up ? 0.72 : 1), vy: up ? -sp * 0.7 : 0, t: 0 });
+  }
+  p.parryFlash = Math.max(0, p.parryFlash - dt);
+  if (p.atk > 0) p.atk -= dt;
+  p.atkT += dt; p.hitAnimT += dt;
+  p.x = clamp(p.x + p.vx * dt, 0, W - p.w);
+  p.y += p.vy * dt;
+  if (p.y + p.h >= GROUND) { p.y = GROUND - p.h; p.vy = 0; p.onGround = true; } else p.onGround = false;
+}
+
+// 맞을 뻔했을 때 부름. 패링에 성공하면 'parry' 를 돌려줌
+function hurtPlayer(fromX) {
+  const p = player;
+  if (state !== 'fight') return;
+  if (p.parry > 0) { parrySuccess(fromX); return 'parry'; }
+  if (p.inv > 0 || p.dash > 0) return;
+  p.hp--; p.inv = 1.0; p.hurtT = 0.25; p.hitAnimT = 0;
+  const d = (p.x + p.w / 2) < fromX ? -1 : 1;
+  p.vx = d * 360; p.vy = -380; shake = 8;
+  burst(p.x + p.w / 2, p.y + 20, '#ff4d4d', 14, 220);
+  ring(p.x + p.w / 2, p.y + p.h / 2, '#ff6b6b', 40);
+  if (p.hp <= 0) { state = 'dead'; stateT = 0; falls++; }
+}
+
+// ===== 패링 =====
+// F (또는 마우스 오른쪽) 를 누르고 0.25초 안에 공격을 받으면 막아냄
+const PARRY_WINDOW = 0.25, PARRY_CD = 0.7;
+function parrySuccess(fromX) {
+  const p = player;
+  p.parry = 0; p.parryCd = 0;          // 성공하면 바로 또 패링할 수 있음
+  p.inv = Math.max(p.inv, 0.4);        // 잠깐 안 맞음
+  p.parryFlash = 0.3;
+  freeze = 0.12;                       // 아주 잠깐 멈춤 (손맛)
+  shake = Math.max(shake, 6);
+  const px = p.x + p.w / 2, py = p.y + p.h / 2;
+  burst(px + (fromX < px ? -16 : 16), py, '#9fe8ff', 18, 320);
+  burst(px + (fromX < px ? -16 : 16), py, '#ffffff', 10, 260);
+  popups.push({ str: '패링!', x: px, y: p.y - 20, t: 0 });
+}
+
+// 보스에게 피해. 쓰러지면 true
+function damageBoss(n, x, y) {
+  boss.hp -= n; boss.flash = 0.1; shake = Math.max(shake, 3);
+  if (boss.onHit) boss.onHit();
+  burst(x, y, '#ffffff', 10, 260);
+  ring(x, y, '#ffffff', n > 1 ? 80 : 45);
+  if (boss.hp > 0) return false;
+  const bc = boss.x + boss.w / 2;
+  state = 'clear'; stateT = 0; shake = 16;
+  burst(bc, boss.y + boss.h / 2, '#ffd23f', 60, 450);
+  shots = []; waves = []; bolts = []; blades = [];
+  mobs.forEach(killMob);
+  mobs = [];
+  chest = { x: W / 2, t: 0, opened: false };
+  return true;
+}
+
+// ===== 한 프레임 계산 =====
+function step(dt) {
+  clock += dt; stateT += dt;
+  shake = Math.max(0, shake - 40 * dt);
+
+  if (state === 'title') { if (tap('start') || hit.has('Mouse0')) startGame(); }
+  else if (state === 'intro') { updPlayer(dt); if (stateT > 1.6) { state = 'fight'; stateT = 0; } }
+  else if (state === 'fight') {
+    runTime += dt;
+    if (freeze > 0) freeze -= dt;    // 패링 순간 잠깐 멈춤
+    else fight(dt);
+  }
+  else if (state === 'clear') {
+    updPlayer(dt);
+    // 보물상자가 열리면 하트 회복
+    if (chest) {
+      chest.t += dt;
+      if (!chest.opened && chest.t > 0.9) {
+        chest.opened = true;
+        if (bossIdx < MAKERS.length - 1) player.hp = Math.min(5, player.hp + 2);
+        burst(chest.x, GROUND - 30, '#ff4d6d', 16, 260); burst(chest.x, GROUND - 30, '#ffd23f', 16, 260);
+      }
+    }
+    if (stateT > 2.6) {
+      bossIdx++;
+      if (bossIdx >= MAKERS.length) { state = 'win'; stateT = 0; }
+      else startBoss();
+    }
+  }
+  else if (state === 'dead') {
+    if (tap('retry')) { player.hp = 5; startBoss(); }
+    else if (stateT > 0.5 && tap('start')) { state = 'title'; stateT = 0; }
+  }
+  else if (state === 'win') { if (stateT > 1 && tap('start')) { state = 'title'; stateT = 0; } }
+
+  for (const q of parts) { q.vy += 900 * dt; q.x += q.vx * dt; q.y += q.vy * dt; q.life -= dt; }
+  parts = parts.filter(q => q.life > 0);
+  updAmb(dt);
+  for (const r of rings) r.t += dt;
+  rings = rings.filter(r => r.t < 0.3);
+  for (const q of popups) q.t += dt;
+  popups = popups.filter(q => q.t < 0.7);
+  for (const e of fx) e.t += dt;
+  fx = fx.filter(e => !animDone(e.key, e.t));
+  hit.clear();
+}
+
+function fight(dt) {
+  const p = player;
+  updPlayer(dt);
+  boss.flash = Math.max(0, boss.flash - dt);
+  boss.update(dt);
+  const bc = boss.x + boss.w / 2;
+
+  // 칼에 맞았나
+  if (p.atk > 0) {
+    const ab = atkBox(p);
+    if (!p.swingHit && !boss.hidden && overlap(ab, boss)) {
+      p.swingHit = true;
+      if (p.atkDown) { p.vy = -640; p.atk = 0; }
+      if (damageBoss(1, clamp(ab.x + ab.w / 2, boss.x, boss.x + boss.w), clamp(ab.y + ab.h / 2, boss.y, boss.y + boss.h))) return;
+    }
+    // 날아오는 것도 벨 수 있음
+    shots = shots.filter(s => {
+      if (!s.back && circleRect(s.x, s.y, s.r, ab)) { killShot(s); return false; }
+      return true;
+    });
+    // 부하는 한 번 베면 쓰러짐
+    mobs = mobs.filter(s => {
+      if (overlap(ab, s)) { killMob(s); return false; }
+      return true;
+    });
+  }
+
+  // 검기: 보스에게 1, 슬라임은 쓰러뜨리고, 날아오는 불덩이·진흙과 부딪히면 둘 다 사라짐
+  blades = blades.filter(b => {
+    b.t += dt; b.x += b.vx * dt; b.y += b.vy * dt;
+    const hb = { x: b.x - 14, y: b.y - 18, w: 28, h: 36 };
+    if (!boss.hidden && overlap(hb, boss)) { damageBoss(1, b.x, b.y); return false; }
+    for (const s of mobs) if (overlap(hb, s)) {
+      killMob(s); mobs = mobs.filter(o => o !== s); return false;
+    }
+    for (const s of shots) if (!s.back && circleRect(s.x, s.y, s.r, hb)) { killShot(s); shots = shots.filter(o => o !== s); burst(b.x, b.y, '#bfe9ff', 8, 200); return false; }
+    return b.x > -40 && b.x < W + 40 && b.y > -40;
+  });
+  if (state !== 'fight') { blades = []; return; }
+
+  // 보스 몸에 부딪힘 (패링하면 보스가 2만큼 다치고 나는 뒤로 밀려남)
+  if (!boss.hidden && overlap(p, boss) && hurtPlayer(bc) === 'parry') {
+    const d = (p.x + p.w / 2) < bc ? -1 : 1;
+    p.vx = d * 420; p.vy = -300; p.hurtT = 0.2;
+    if (damageBoss(2, clamp(p.x + p.w / 2, boss.x, boss.x + boss.w), p.y + p.h / 2)) return;
+  }
+
+  // 부하 몬스터 (패링하면 쓰러짐)
+  mobs = mobs.filter(s => {
+    s.t += dt;
+    if (s.kind === 'eye') {               // 눈알: 기사 쪽으로 천천히 날아옴
+      const dx = p.x + p.w / 2 - (s.x + s.w / 2), dy = p.y + 20 - (s.y + s.h / 2), d = Math.hypot(dx, dy) || 1;
+      s.x += dx / d * 120 * dt; s.y += dy / d * 120 * dt + Math.sin(s.t * 6) * 40 * dt;
+      s.dir = dx > 0 ? 1 : -1;
+    } else s.x += s.dir * MOB[s.kind].speed * dt;
+    if (overlap(p, s) && hurtPlayer(s.x + s.w / 2) === 'parry') { killMob(s); return false; }
+    return s.x > -60 && s.x < W + 60;
+  });
+
+  // 날아오는 것 (패링하면 보스에게 되돌아감)
+  shots = shots.filter(s => {
+    s.vy += s.g * dt; s.x += s.vx * dt; s.y += s.vy * dt;
+    if (s.back) {
+      if (!boss.hidden && circleRect(s.x, s.y, s.r, boss)) { killShot(s); damageBoss(1, s.x, s.y); return false; }
+      return s.x > -50 && s.x < W + 50 && s.y > -80 && s.y < H;
+    }
+    if (circleRect(s.x, s.y, s.r, p)) {
+      if (hurtPlayer(s.x) === 'parry') {
+        const dx = boss.x + boss.w / 2 - s.x, dy = boss.y + boss.h / 2 - s.y, d = Math.hypot(dx, dy) || 1;
+        s.vx = dx / d * 700; s.vy = dy / d * 700; s.g = 0; s.back = true;
+        return true;
+      }
+      killShot(s); return false;
+    }
+    if (s.y + s.r >= GROUND && s.vy > 0) { s.y = GROUND - s.r; killShot(s); return false; }
+    return s.x > -60 && s.x < W + 60;
+  });
+  if (state !== 'fight') { shots = []; return; }   // 되돌린 불로 보스를 쓰러뜨렸을 때
+
+  // 땅을 타고 오는 충격파 (패링하면 부서짐)
+  waves = waves.filter(w => {
+    w.x += w.dir * w.speed * dt;
+    if (overlap(p, { x: w.x - 14, y: GROUND - 34, w: 28, h: 34 }) && hurtPlayer(w.x) === 'parry') return false;
+    return w.x > -40 && w.x < W + 40;
+  });
+
+  // 불기둥
+  bolts = bolts.filter(b => {
+    b.t -= dt;
+    if (b.t <= 0) {
+      if (!b.struck) { b.struck = true; shake = Math.max(shake, 5); burst(b.x, GROUND - 4, '#ffb347', 10, 220); }
+      if (overlap(p, { x: b.x - 18, y: 0, w: 36, h: GROUND })) hurtPlayer(b.x);
+    }
+    return b.t > -b.on;
+  });
+}
+
+// 부하 몬스터 종류: 그림, 크기, 빠르기, 쓰러질 때 그림
+const MOB = {
+  slime:  { walk: 'slimeWalk', die: 'slimeDie',  scale: 3,   speed: 90,  col: '#7fd4ff' },
+  pebble: { walk: 'pebbleRun', die: 'pebbleDie', scale: 4,   speed: 170, col: '#9aa7c7' },
+  eye:    { walk: 'eyeFly',    die: null,        scale: 2.5, speed: 120, col: '#ff5a6a', facesLeft: true },
+};
+function killMob(s) {
+  const m = MOB[s.kind], cx = s.x + s.w / 2;
+  if (m.die) playFx(m.die, cx, s.y + s.h, m.scale, m.facesLeft ? s.dir > 0 : s.dir < 0);
+  burst(cx, s.y + s.h / 2, m.col, 12, 220);
+}
+
+function killShot(s) {
+  if (s.kind === 'wisp') playFx('wispDie', s.x, s.y, 1.5);
+  else if (s.kind === 'fire') burst(s.x, s.y, '#ff8a3c', 12, 200);
+  else if (s.kind === 'bone') burst(s.x, s.y, '#f2efe6', 10, 200);
+  else burst(s.x, s.y, '#6b4a2e', 12, 180);
+}
+
+// ===== 배경 그림 =====
+// 배경은 판마다 한 번만 그려 두고(오프스크린 캔버스) 매 프레임 그대로 붙여서 빠름
+function rng(seed) { let s = seed; return () => (s = s * 16807 % 2147483647) / 2147483647; }
+function layer() { const c = document.createElement('canvas'); c.width = W; c.height = H; return c; }
+function vgrad(g, y0, y1, stops) { const gr = g.createLinearGradient(0, y0, 0, y1); stops.forEach(([p, c]) => gr.addColorStop(p, c)); return gr; }
+function softGlow(g, x, y, r, rgb, a) {
+  const gr = g.createRadialGradient(x, y, 0, x, y, r);
+  gr.addColorStop(0, `rgba(${rgb},${a})`); gr.addColorStop(1, `rgba(${rgb},0)`);
+  g.fillStyle = gr; g.fillRect(x - r, y - r, r * 2, r * 2);
+}
+// 울퉁불퉁한 산 능선
+function ridge(g, base, amp, freq, off, col) {
+  g.fillStyle = col; g.beginPath(); g.moveTo(0, H);
+  for (let x = 0; x <= W; x += 6)
+    g.lineTo(x, base - (Math.sin(x * freq + off) * 0.6 + Math.sin(x * freq * 2.3 + off * 1.7) * 0.3 + Math.sin(x * freq * 5.1 + off * 0.3) * 0.1) * amp);
+  g.lineTo(W, H); g.fill();
+}
+function pine(g, x, base, h, col) {
+  g.fillStyle = col; g.fillRect(x - 2, base - h * 0.25, 4, h * 0.25);
+  for (let k = 0; k < 4; k++) {
+    const w = h * 0.3 * (1 - k * 0.18), y = base - h * 0.15 - k * h * 0.2;
+    g.beginPath(); g.moveTo(x - w, y); g.lineTo(x, y - h * 0.38); g.lineTo(x + w, y); g.fill();
+  }
+}
+function crystal(g, x, y, s, col, rgb) {
+  softGlow(g, x, y - s * 0.6, s * 2.4, rgb, 0.35);
+  for (const k of [-1, 1, 0]) {
+    const h = s * (k ? 0.7 : 1.15), w = s * 0.2, cx = x + k * s * 0.3;
+    g.fillStyle = col;
+    g.beginPath(); g.moveTo(cx - w, y); g.lineTo(cx + k * s * 0.15, y - h); g.lineTo(cx + w, y); g.fill();
+    g.fillStyle = 'rgba(255,255,255,0.35)';
+    g.beginPath(); g.moveTo(cx - w * 0.3, y); g.lineTo(cx + k * s * 0.15, y - h); g.lineTo(cx, y); g.fill();
+  }
+}
+// 땅: 흙 결, 돌, 위 테두리 (풀 / 수정 / 바위)
+function ground(g, top, bottom, edge, edgeLight, R, kind) {
+  g.fillStyle = vgrad(g, GROUND, H, [[0, top], [1, bottom]]); g.fillRect(0, GROUND, W, H - GROUND);
+  for (let i = 0; i < 70; i++) { g.fillStyle = `rgba(0,0,0,${0.12 + R() * 0.2})`; g.fillRect(R() * W, GROUND + 14 + R() * 60, 6 + R() * 20, 2); }
+  for (let i = 0; i < 40; i++) { g.fillStyle = `rgba(255,255,255,${0.03 + R() * 0.06})`; g.fillRect(R() * W, GROUND + 14 + R() * 60, 3 + R() * 6, 2 + R() * 3); }
+  g.fillStyle = edge; g.fillRect(0, GROUND, W, 8);
+  g.fillStyle = edgeLight; g.fillRect(0, GROUND, W, 2);
+  g.fillStyle = 'rgba(0,0,0,0.3)'; g.fillRect(0, GROUND + 8, W, 3);
+  if (kind === 'grass') {
+    g.fillStyle = edge;
+    for (let x = 0; x < W; x += 4 + R() * 6) { const h = 3 + R() * 8; g.beginPath(); g.moveTo(x, GROUND + 1); g.lineTo(x + 2, GROUND - h); g.lineTo(x + 4, GROUND + 1); g.fill(); }
+    for (let x = 0; x < W; x += 30 + R() * 50) {           // 작은 꽃
+      g.fillStyle = ['#ffd6e8', '#fff3b0', '#c9e7ff'][R() * 3 | 0]; g.fillRect(x, GROUND - 6, 3, 3);
+    }
+  } else if (kind === 'crystal') {
+    for (let i = 0; i < 9; i++) crystal(g, R() * W, GROUND + 2, 8 + R() * 8, R() < 0.5 ? '#7fe3ff' : '#c28cff', R() < 0.5 ? '120,220,255' : '190,130,255');
+  } else if (kind === 'rock') {
+    g.fillStyle = edge;
+    for (let x = 0; x < W; x += 30 + R() * 60) { const w = 10 + R() * 22, h = 4 + R() * 8; g.beginPath(); g.moveTo(x, GROUND + 1); g.lineTo(x + w * 0.3, GROUND - h); g.lineTo(x + w * 0.8, GROUND - h * 0.7); g.lineTo(x + w, GROUND + 1); g.fill(); }
+  }
+}
+
+function bgDusk() {
+  const c = layer(), g = c.getContext('2d'), R = rng(7);
+  g.fillStyle = vgrad(g, 0, GROUND, [[0, '#1b2350'], [0.45, '#6d4479'], [0.8, '#e98a5e'], [1, '#ffcf8a']]); g.fillRect(0, 0, W, GROUND);
+  for (let i = 0; i < 50; i++) { g.fillStyle = `rgba(255,255,255,${R() * 0.6})`; g.fillRect(R() * W, R() * 150, 2, 2); }
+  softGlow(g, 690, 360, 280, '255,190,120', 0.55);                    // 노을 해
+  g.fillStyle = '#ffe6b0'; g.beginPath(); g.arc(690, 360, 44, 0, Math.PI * 2); g.fill();
+  for (let i = 0; i < 8; i++) {                                         // 구름
+    const cx = R() * W, cy = 60 + R() * 200, s = 40 + R() * 70;
+    g.fillStyle = `rgba(255,${170 + R() * 40 | 0},${160 + R() * 40 | 0},${0.16 + R() * 0.14})`;
+    for (let k = 0; k < 5; k++) { g.beginPath(); g.ellipse(cx + (k - 2) * s * 0.45, cy + R() * 10, s * 0.6, s * 0.2, 0, 0, Math.PI * 2); g.fill(); }
+  }
+  ridge(g, 370, 80, 0.006, 1, '#7a5584');
+  ridge(g, 405, 60, 0.009, 4, '#4f3f6b');
+  g.fillStyle = vgrad(g, 340, GROUND, [[0, 'rgba(255,190,150,0)'], [1, 'rgba(255,190,150,0.28)']]); g.fillRect(0, 340, W, GROUND - 340);
+  ridge(g, 445, 24, 0.013, 9, '#2c2c4a');
+  for (let i = 0; i < 18; i++) pine(g, R() * W, GROUND - 14 + R() * 8, 60 + R() * 60, '#30304f');
+  for (let i = 0; i < 22; i++) pine(g, R() * W, GROUND - 4 + R() * 6, 40 + R() * 70, '#1c1f35');
+  ground(g, '#3b2a1f', '#1c120d', '#4c8a3a', '#86c95a', R, 'grass');
+  return c;
+}
+
+function bgCave() {
+  const c = layer(), g = c.getContext('2d'), R = rng(21);
+  g.fillStyle = vgrad(g, 0, GROUND, [[0, '#05040b'], [0.6, '#171230'], [1, '#2a1f48']]); g.fillRect(0, 0, W, GROUND);
+  for (let i = 0; i < 9; i++) {                                         // 먼 돌기둥
+    const x = R() * W, w = 30 + R() * 60;
+    g.fillStyle = vgrad(g, 0, GROUND, [[0, 'rgba(30,22,58,0.9)'], [1, 'rgba(48,36,84,0.9)']]);
+    g.fillRect(x, 0, w, GROUND); g.fillStyle = 'rgba(140,110,220,0.08)'; g.fillRect(x, 0, 4, GROUND);
+  }
+  ridge(g, 420, 60, 0.01, 2, '#1d1636');
+  for (let i = 0; i < 7; i++) crystal(g, R() * W, 420 + R() * 30, 18 + R() * 20, R() < 0.5 ? '#4fb6d8' : '#9a62d8', R() < 0.5 ? '90,200,255' : '170,110,255');
+  ridge(g, 455, 20, 0.02, 6, '#1a132e');
+  g.fillStyle = '#0d0a1a';                                              // 천장과 종유석
+  g.beginPath(); g.moveTo(0, 0);
+  for (let x = 0; x <= W; x += 6) g.lineTo(x, 26 + Math.sin(x * 0.03) * 10 + Math.sin(x * 0.11) * 5);
+  g.lineTo(W, 0); g.fill();
+  for (let i = 0; i < 30; i++) {
+    const x = R() * W, w = 6 + R() * 18, h = 30 + R() * 110;
+    g.beginPath(); g.moveTo(x - w, 20); g.lineTo(x, 20 + h); g.lineTo(x + w, 20); g.fill();
+  }
+  g.fillStyle = vgrad(g, 360, GROUND, [[0, 'rgba(150,110,255,0)'], [1, 'rgba(150,110,255,0.18)']]); g.fillRect(0, 360, W, GROUND - 360);
+  ground(g, '#2b2340', '#110d1c', '#4a3d70', '#8d7cc4', R, 'crystal');
+  return c;
+}
+
+let LAVA_CRACKS = [];
+function bgVolcano() {
+  const c = layer(), g = c.getContext('2d'), R = rng(99);
+  g.fillStyle = vgrad(g, 0, GROUND, [[0, '#0d0306'], [0.4, '#3d0b10'], [0.8, '#a3301a'], [1, '#ff8a3a']]); g.fillRect(0, 0, W, GROUND);
+  for (let i = 0; i < 6; i++) {                                         // 연기
+    g.fillStyle = `rgba(20,6,8,${0.35 + R() * 0.25})`;
+    g.beginPath(); g.ellipse(560 + R() * 200, 40 + R() * 120, 90 + R() * 80, 34 + R() * 20, 0, 0, Math.PI * 2); g.fill();
+  }
+  softGlow(g, 650, 190, 170, '255,110,40', 0.6);
+  g.fillStyle = '#2a0f0e';                                              // 화산
+  g.beginPath(); g.moveTo(330, GROUND); g.lineTo(610, 190); g.lineTo(690, 190); g.lineTo(990, GROUND); g.fill();
+  g.strokeStyle = '#ff6a1f'; g.lineWidth = 4; g.lineCap = 'round';      // 흘러내리는 용암
+  for (let k = 0; k < 4; k++) {
+    let x = 620 + k * 18, y = 192; g.beginPath(); g.moveTo(x, y);
+    while (y < 430) { y += 14; x += (k < 2 ? -1 : 1) * (4 + R() * 10); g.lineTo(x, y); }
+    g.stroke();
+  }
+  g.lineCap = 'butt';
+  ridge(g, 425, 40, 0.012, 3, '#1f0b0b');
+  ridge(g, 455, 18, 0.025, 7, '#160707');
+  ground(g, '#2a1712', '#0e0706', '#3d1d14', '#ff7a2b', R, 'rock');
+  LAVA_CRACKS = [];                                                     // 땅의 용암 금 (빛은 매 프레임 따로)
+  for (let i = 0; i < 9; i++) {
+    let x = R() * W, y = GROUND + 12 + R() * 20; const pts = [[x, y]];
+    for (let k = 0; k < 5; k++) { x += 10 + R() * 20; y += (R() - 0.4) * 14; pts.push([x, clamp(y, GROUND + 10, H - 6)]); }
+    LAVA_CRACKS.push(pts);
+  }
+  g.strokeStyle = '#120605'; g.lineWidth = 5;
+  for (const pts of LAVA_CRACKS) { g.beginPath(); pts.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); g.stroke(); }
+  return c;
+}
+
+function bgHell() {
+  const c = layer(), g = c.getContext('2d'), R = rng(313);
+  g.fillStyle = vgrad(g, 0, GROUND, [[0, '#050102'], [0.55, '#2a0508'], [1, '#6e140e']]); g.fillRect(0, 0, W, GROUND);
+  softGlow(g, W / 2, GROUND, 520, '255,70,20', 0.35);                  // 멀리 불바다 빛
+  for (let i = 0; i < 12; i++) {                                         // 뾰족한 바위 기둥
+    const x = R() * W, w = 30 + R() * 60, h = 120 + R() * 220;
+    g.fillStyle = i % 2 ? '#1a0405' : '#240607';
+    g.beginPath(); g.moveTo(x - w, GROUND); g.lineTo(x - w * 0.3, GROUND - h * 0.7); g.lineTo(x, GROUND - h);
+    g.lineTo(x + w * 0.25, GROUND - h * 0.6); g.lineTo(x + w, GROUND); g.fill();
+    g.strokeStyle = 'rgba(255,90,40,0.25)'; g.lineWidth = 2;
+    g.beginPath(); g.moveTo(x - w * 0.3, GROUND - h * 0.7); g.lineTo(x, GROUND - h); g.stroke();
+  }
+  g.strokeStyle = '#140405'; g.lineWidth = 3;                            // 매달린 사슬
+  for (let i = 0; i < 7; i++) {
+    const x = 40 + R() * (W - 80), len = 60 + R() * 160;
+    for (let y = 0; y < len; y += 12) { g.beginPath(); g.ellipse(x, y, (y / 12) % 2 ? 2 : 4, 6, 0, 0, Math.PI * 2); g.stroke(); }
+  }
+  ridge(g, 450, 22, 0.02, 5, '#160304');
+  ground(g, '#2a0c0a', '#0a0202', '#4a140e', '#ff4a1f', R, 'rock');
+  g.strokeStyle = '#120202'; g.lineWidth = 5;                            // 용암 금 (화산 판과 같은 자리)
+  for (const pts of LAVA_CRACKS) { g.beginPath(); pts.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); g.stroke(); }
+  return c;
+}
+
+function deadTree(g, x, y, len, ang, depth) {
+  const x2 = x + Math.cos(ang) * len, y2 = y + Math.sin(ang) * len;
+  g.lineWidth = Math.max(1, depth * 1.6);
+  g.beginPath(); g.moveTo(x, y); g.lineTo(x2, y2); g.stroke();
+  if (depth > 0) { deadTree(g, x2, y2, len * 0.72, ang - 0.45, depth - 1); deadTree(g, x2, y2, len * 0.68, ang + 0.4, depth - 1); }
+}
+function bgGrave() {
+  const c = layer(), g = c.getContext('2d'), R = rng(555);
+  g.fillStyle = vgrad(g, 0, GROUND, [[0, '#060918'], [0.6, '#18254a'], [1, '#3a4b6e']]); g.fillRect(0, 0, W, GROUND);
+  for (let i = 0; i < 90; i++) { g.fillStyle = `rgba(255,255,255,${R() * 0.8})`; g.fillRect(R() * W, R() * 300, R() < 0.1 ? 2 : 1, R() < 0.1 ? 2 : 1); }
+  softGlow(g, 240, 140, 200, '220,230,255', 0.35);                     // 큰 달
+  g.fillStyle = '#eeeedd'; g.beginPath(); g.arc(240, 140, 58, 0, Math.PI * 2); g.fill();
+  g.fillStyle = 'rgba(160,165,170,0.35)';
+  [[222, 122, 12], [262, 150, 9], [236, 168, 7], [256, 116, 5]].forEach(([x, y, r]) => { g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill(); });
+  ridge(g, 390, 50, 0.007, 2, '#1f2a48');
+  ridge(g, 425, 30, 0.012, 8, '#161e36');
+  g.strokeStyle = '#0d1222';                                             // 죽은 나무
+  for (let i = 0; i < 5; i++) deadTree(g, R() * W, GROUND, 40 + R() * 30, -Math.PI / 2 + (R() - 0.5) * 0.3, 5);
+  for (let i = 0; i < 16; i++) {                                         // 무덤 비석
+    const x = R() * W, w = 18 + R() * 16, h = 24 + R() * 26, y = GROUND - 2;
+    g.fillStyle = '#28324d';
+    if (R() < 0.35) { g.fillRect(x - 3, y - h - 10, 6, h + 10); g.fillRect(x - 12, y - h, 24, 6); }
+    else { g.beginPath(); g.moveTo(x - w / 2, y); g.lineTo(x - w / 2, y - h + w / 2); g.arc(x, y - h + w / 2, w / 2, Math.PI, 0); g.lineTo(x + w / 2, y); g.fill(); }
+    g.fillStyle = 'rgba(160,185,230,0.18)'; g.fillRect(x - w / 2, y - h + w / 2, 2, h - w / 2);
+  }
+  g.fillStyle = vgrad(g, 380, GROUND, [[0, 'rgba(200,215,255,0)'], [1, 'rgba(200,215,255,0.22)']]); g.fillRect(0, 380, W, GROUND - 380);
+  ground(g, '#1e2436', '#0b0e18', '#2f3a55', '#8fa3c7', R, 'grass');
+  return c;
+}
+
+function makeVignette() {
+  const c = layer(), g = c.getContext('2d');
+  const gr = g.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, W * 0.65);
+  gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(0,0,0,0.55)');
+  g.fillStyle = gr; g.fillRect(0, 0, W, H);
+  return c;
+}
+const BGS = [bgDusk(), bgCave(), bgVolcano(), bgHell(), bgGrave()];
+const VIGNETTE = makeVignette();
+const stageNow = () => state === 'title' ? 0 : Math.min(bossIdx, BGS.length - 1);
+
+// 떠다니는 빛: 반딧불(숲) / 반짝이는 먼지(동굴) / 불씨(화산)
+let amb = [];
+function updAmb(dt) {
+  const st = stageNow();
+  while (amb.length < 40) amb.push({ x: rand(0, W), y: rand(60, GROUND), ph: rand(0, 7), s: rand(1.5, 3.5), vx: rand(-15, 15), vy: rand(-30, -10) });
+  for (const a of amb) {
+    a.ph += dt;
+    if (st === 0 || st === 4) { a.x += Math.sin(a.ph * 0.8) * 20 * dt; a.y += Math.cos(a.ph * 0.6) * 12 * dt; }
+    else if (st === 1) { a.y += 14 * dt; a.x += Math.sin(a.ph) * 6 * dt; if (a.y > GROUND) { a.y = 30; a.x = rand(0, W); } }
+    else { a.x += a.vx * dt; a.y += a.vy * 2 * dt; if (a.y < 0) { a.y = GROUND; a.x = rand(0, W); } }
+  }
+}
+function drawAmb() {
+  const st = stageNow(), rgb = ['220,255,140', '170,200,255', '255,150,60', '255,70,40', '170,230,255'][st];
+  ctx.globalCompositeOperation = 'lighter';
+  for (const a of amb) {
+    const tw = 0.4 + 0.6 * Math.abs(Math.sin(a.ph * (st === 0 || st === 4 ? 1.5 : 3)));
+    ctx.fillStyle = `rgba(${rgb},${0.15 * tw})`; ctx.beginPath(); ctx.arc(a.x, a.y, a.s * 3, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = `rgba(${rgb},${0.9 * tw})`; ctx.fillRect(a.x - a.s / 2, a.y - a.s / 2, a.s, a.s);
+  }
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+// 빛 번짐 (불, 해골, 도깨비불 뒤에)
+function glow(x, y, r, rgb, a) {
+  ctx.globalCompositeOperation = 'lighter';
+  softGlow(ctx, x, y, r, rgb, a);
+  ctx.globalCompositeOperation = 'source-over';
+}
+// 발밑 그림자. 높이 뜰수록 작고 옅게
+function shadow(cx, bottom, w) {
+  const up = clamp((GROUND - bottom) / 300, 0, 0.7);
+  ctx.fillStyle = `rgba(0,0,0,${0.35 * (1 - up)})`;
+  ctx.beginPath(); ctx.ellipse(cx, GROUND + 3, w * (1 - up * 0.6) / 2, 6 * (1 - up * 0.5), 0, 0, Math.PI * 2); ctx.fill();
+}
+// 야수의 불덩이: 빛 + 꼬리 + 흔들리는 불꽃
+function drawFireball(s) {
+  glow(s.x, s.y, 60, '255,110,30', 0.5);
+  const ang = Math.atan2(s.vy, s.vx);
+  ctx.save(); ctx.translate(s.x, s.y); ctx.rotate(ang);
+  ctx.fillStyle = 'rgba(255,90,20,0.45)'; ctx.beginPath(); ctx.ellipse(-16, 0, 20, 8, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#ff5a1f'; ctx.beginPath(); ctx.arc(0, 0, s.r + Math.sin(clock * 40) * 1.5, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#ffe28a'; ctx.beginPath(); ctx.arc(2, 0, s.r * 0.5, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+// 해골 왕의 뼈다귀: 빙글빙글 돎
+function drawBone(s) {
+  ctx.save(); ctx.translate(s.x, s.y); ctx.rotate(clock * 14);
+  ctx.fillStyle = '#f2efe6'; ctx.fillRect(-12, -3, 24, 6);
+  for (const e of [-12, 12]) for (const k of [-4, 4]) { ctx.beginPath(); ctx.arc(e, k, 4.5, 0, Math.PI * 2); ctx.fill(); }
+  ctx.restore();
+}
+
+// 검기 그리기: 빛나는 초승달
+function drawBlades() {
+  for (const b of blades) {
+    const ang = Math.atan2(b.vy, b.vx);
+    glow(b.x, b.y, 50, '150,210,255', 0.45);
+    ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(ang);
+    ctx.globalAlpha = 0.35; ctx.fillStyle = '#9fd8ff';            // 꼬리
+    ctx.beginPath(); ctx.ellipse(-26, 0, 26, 6, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#e8f6ff';                                     // 초승달
+    ctx.beginPath(); ctx.arc(0, 0, 18, -Math.PI / 2, Math.PI / 2); ctx.arc(-7, 0, 15, Math.PI / 2, -Math.PI / 2, true); ctx.fill();
+    ctx.strokeStyle = '#6fc3ff'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.restore();
+  }
+}
+
+// 맞았을 때 퍼지는 고리
+let rings = [], blades = [];
+const MAX_AMMO = 3, AMMO_TIME = 1.5;
+const ring = (x, y, col, max = 50) => rings.push({ x, y, col, max, t: 0 });
+
+// ===== 그리기 =====
+function draw() {
+  ctx.imageSmoothingEnabled = false;   // 픽셀 그림을 또렷하게 (최근접)
+  const pal = boss ? boss.pal : MAKERS[0]().pal;
+  ctx.save();
+  if (shake > 0) ctx.translate(rand(-shake, shake), rand(-shake, shake));
+
+  // 배경 (흔들릴 때 가장자리가 비지 않게 조금 크게)
+  const st = stageNow();
+  ctx.fillStyle = pal.ground; ctx.fillRect(-20, -20, W + 40, H + 40);
+  ctx.drawImage(BGS[st], 0, 0);
+  if (st === 2 || st === 3) {                       // 땅속 용암 금이 숨 쉬듯 빛남
+    ctx.strokeStyle = `rgba(255,${110 + Math.sin(clock * 3) * 40 | 0},30,${0.6 + Math.sin(clock * 2) * 0.3})`;
+    ctx.lineWidth = 2;
+    for (const pts of LAVA_CRACKS) { ctx.beginPath(); pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.stroke(); }
+    glow(W / 2, GROUND + 40, 500, '255,90,20', 0.12 + Math.sin(clock * 2) * 0.04);
+  }
+  drawAmb();
+
+  if (state === 'title') drawTitleCast();
+
+  if (state !== 'title' && boss) {
+    // 그림자
+    if (state !== 'clear' || stateT < 0.6) shadow(boss.x + boss.w / 2, boss.y + boss.h, boss.w * 1.1);
+    for (const s of mobs) shadow(s.x + s.w / 2, s.y + s.h, s.w);
+    if (state !== 'dead' || stateT < 0.8) shadow(player.x + player.w / 2, player.y + player.h, 40);
+    glow(player.x + player.w / 2, player.y + player.h / 2, 70, '200,225,255', 0.18);   // 기사가 배경에 묻히지 않게
+    // 빛 번짐
+    if (bossIdx === 1 && state !== 'clear') glow(boss.x + boss.w / 2, boss.y + boss.h / 2, 150, '255,120,40', 0.35 + Math.sin(clock * 8) * 0.05);
+    for (const s of shots) if (s.kind === 'wisp') glow(s.x, s.y, 50, '255,140,50', 0.45);
+    if (bossIdx === 2 && boss.st === 'throw') glow(boss.x + boss.w / 2, boss.y, 80, '255,140,50', 0.5);
+    for (const b of bolts) if (b.t <= 0 && !b.hide) glow(b.x, GROUND - 40, 120, '255,120,40', 0.5);
+    // 불기둥 예고 / 불기둥
+    for (const b of bolts) {
+      if (b.hide) continue;
+      if (b.t > 0) {
+        ctx.strokeStyle = `rgba(255,170,60,${0.35 + Math.sin(clock * 40) * 0.25})`;
+        ctx.lineWidth = 2; ctx.setLineDash([10, 8]);
+        ctx.beginPath(); ctx.moveTo(b.x, 0); ctx.lineTo(b.x, GROUND); ctx.stroke(); ctx.setLineDash([]);
+        ctx.fillStyle = 'rgba(255,140,40,0.4)'; ctx.beginPath(); ctx.ellipse(b.x, GROUND, 22, 6, 0, 0, Math.PI * 2); ctx.fill();
+      } else {
+        const fg = ctx.createLinearGradient(b.x - 20, 0, b.x + 20, 0);
+        fg.addColorStop(0, 'rgba(255,80,20,0)'); fg.addColorStop(0.3, '#ff6a1f'); fg.addColorStop(0.5, '#fff1a8');
+        fg.addColorStop(0.7, '#ff6a1f'); fg.addColorStop(1, 'rgba(255,80,20,0)');
+        ctx.fillStyle = fg;
+        const wob = Math.sin(clock * 50) * 3;
+        ctx.fillRect(b.x - 20 + wob, 0, 40, GROUND);
+      }
+    }
+    // 떨어지는 진흙 그림자
+    for (const s of shots) if (s.kind === 'mud') {
+      ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.beginPath(); ctx.ellipse(s.x, GROUND + 2, 18, 4, 0, 0, Math.PI * 2); ctx.fill();
+    }
+
+    if (state === 'clear' && boss.drawDead) boss.drawDead(stateT);
+    else if (state !== 'clear' || stateT < 0.6) {
+      if (state === 'clear') ctx.globalAlpha = 1 - stateT / 0.6;
+      boss.draw();
+      ctx.globalAlpha = 1;
+    }
+
+    // 보물상자
+    if (chest) {
+      const f = chest.t < 0.9 ? 0 : frameAt('chest', chest.t - 0.9);
+      const drop = Math.max(0, 1 - chest.t / 0.4);
+      if (!drawFrame('chest', f, chest.x, GROUND - drop * 200, 3)) box({ x: chest.x - 24, y: GROUND - 48, w: 48, h: 48 }, '#c84');
+    }
+
+    // 부하 몬스터
+    for (const s of mobs) {
+      const m = MOB[s.kind], flip = m.facesLeft ? s.dir > 0 : s.dir < 0;
+      const y = s.kind === 'eye' ? s.y + s.h / 2 : s.y + s.h;
+      if (s.kind === 'eye') glow(s.x + s.w / 2, y, 40, '255,60,60', 0.25);
+      if (!drawAnim(m.walk, s.t, s.x + s.w / 2, y, m.scale, flip)) box(s, m.col);
+    }
+
+    // 날아오는 것
+    for (const s of shots) {
+      if (s.kind === 'fire') { drawFireball(s); continue; }
+      if (s.kind === 'bone') { drawBone(s); continue; }
+      const ok = s.kind === 'wisp' ? drawAnim('wisp', clock, s.x, s.y, 1.5) : drawAnim('mud', clock, s.x, s.y, 2.5);
+      if (!ok) { ctx.fillStyle = s.kind === 'wisp' ? '#ff7a2b' : '#6b4a2e'; ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill(); }
+    }
+    // 충격파
+    for (const w of waves) {
+      ctx.fillStyle = '#c9b8a0';
+      ctx.beginPath(); ctx.moveTo(w.x - 14, GROUND); ctx.quadraticCurveTo(w.x + w.dir * 4, GROUND - 60, w.x + 14, GROUND); ctx.fill();
+      ctx.fillStyle = '#fff3d6';
+      ctx.beginPath(); ctx.moveTo(w.x - 7, GROUND); ctx.quadraticCurveTo(w.x, GROUND - 30, w.x + 7, GROUND); ctx.fill();
+    }
+
+    drawBlades();
+    drawPlayer();
+    drawParry();
+  }
+
+  for (const e of fx) drawAnim(e.key, e.t, e.x, e.y, e.scale, e.flip);
+  for (const q of parts) { ctx.globalAlpha = clamp(q.life * 2, 0, 1); ctx.fillStyle = q.col; ctx.fillRect(q.x, q.y, q.size, q.size); }
+  for (const r of rings) {
+    const k = r.t / 0.3;
+    ctx.globalAlpha = 1 - k; ctx.strokeStyle = r.col; ctx.lineWidth = 4 * (1 - k) + 1;
+    ctx.beginPath(); ctx.arc(r.x, r.y, 8 + k * r.max, 0, Math.PI * 2); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+
+  ctx.drawImage(VIGNETTE, 0, 0);       // 가장자리를 살짝 어둡게
+  drawHud();
+}
+
+// 첫 화면에 나오는 보스들
+function drawTitleCast() {
+  drawAnim('demonIdle', clock, 170, GROUND, 3.5, false);
+  glow(570, GROUND - 60, 110, '255,120,40', 0.35);
+  drawAnim('skullFly', clock, 570, GROUND - 60, 1.0, false);
+  drawAnim('golIdle', clock, 800, GROUND, 2.4, true);
+  drawAnim('slimeWave', clock, 290, GROUND, 3, false);
+  drawAnim('mud', clock, 670, GROUND - 22, 2.5, false);
+  drawAnim('heroIdle', clock, 410, GROUND, 1.6, false);
+}
+
+// 패링 효과: 막는 동안 앞에 파란 방패 빛, 성공하면 하얀 고리, "패링!" 글자
+function drawParry() {
+  const p = player, cx = p.x + p.w / 2, cy = p.y + p.h / 2;
+  if (p.parry > 0) {
+    ctx.strokeStyle = `rgba(140,220,255,${0.4 + p.parry / PARRY_WINDOW * 0.6})`; ctx.lineWidth = 5;
+    ctx.beginPath();
+    if (p.face > 0) ctx.arc(cx, cy, 38, -Math.PI * 0.45, Math.PI * 0.45);
+    else ctx.arc(cx, cy, 38, Math.PI * 0.55, Math.PI * 1.45);
+    ctx.stroke();
+  }
+  if (p.parryFlash > 0) {
+    const k = 1 - p.parryFlash / 0.3;
+    ctx.strokeStyle = `rgba(255,255,255,${1 - k})`; ctx.lineWidth = 6 * (1 - k) + 1;
+    ctx.beginPath(); ctx.arc(cx, cy, 30 + k * 60, 0, Math.PI * 2); ctx.stroke();
+  }
+  for (const q of popups) {
+    ctx.globalAlpha = clamp(1.4 - q.t * 2, 0, 1);
+    text(q.str, q.x, q.y - q.t * 50, 26, '#9fe8ff');
+    ctx.globalAlpha = 1;
+  }
+}
+
+function drawPlayer() {
+  const p = player;
+  const S = 1.35, x = p.x + p.w / 2, y = p.y + p.h, flip = p.face < 0;
+  // 지금 상황에 맞는 기사 그림 고르기
+  let key, t = clock;
+  if (state === 'dead') { key = 'heroDie'; t = stateT; }
+  else if (p.parry > 0 || p.parryFlash > 0) { key = 'heroAtk'; t = 0; }   // 칼을 세워 막는 자세
+  else if (p.atkT < 0.3 && !p.atkDown) { key = p.combo ? 'heroAtk' : 'heroAtk2'; t = p.atkT * (7 / 0.3) / 14; } // 휘두르는 시간(0.3초)에 7프레임
+  else if (p.hitAnimT < 0.33) { key = 'heroHit'; t = p.hitAnimT; }
+  else if (!p.onGround) key = p.vy < 0 ? 'heroJump' : 'heroFall';
+  else if (Math.abs(p.vx) > 1) { key = 'heroRun'; if (p.dash > 0) t = clock * 2; }
+  else key = 'heroIdle';
+  const blink = state !== 'dead' && p.parryFlash <= 0 && p.inv > 0 && Math.floor(p.inv * 20) % 2;
+  if (!blink && drawAnim(key, t, x, y, S, flip, p.dash > 0 ? 'brightness(1.6)' : null)) {
+    if (p.atk > 0 && p.atkDown) {   // 아래 베기는 그림이 없어서 흰 선으로
+      ctx.strokeStyle = `rgba(255,255,255,${0.4 + p.atk / 0.16 * 0.6})`; ctx.lineWidth = 9; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.arc(x, p.y + p.h - 10, 40, Math.PI * 0.15, Math.PI * 0.85); ctx.stroke(); ctx.lineCap = 'butt';
+    }
+    return;
+  }
+  if (blink) return;
+  // 그림을 아직 못 불러왔을 때: 직접 그린 기사
+  {
+    ctx.save();
+    ctx.translate(p.x + p.w / 2, p.y);
+    ctx.scale(p.face, 1);
+    ctx.fillStyle = '#b03a48'; ctx.fillRect(-16, 14, 10, 24);          // 망토
+    ctx.fillStyle = '#4a5568'; ctx.fillRect(-10, 34, 8, 10); ctx.fillRect(2, 34, 8, 10); // 다리
+    ctx.fillStyle = '#c9d1d9'; ctx.fillRect(-12, 14, 24, 22);          // 갑옷
+    ctx.fillStyle = '#9aa5b1'; ctx.fillRect(-11, -2, 22, 18);          // 투구
+    ctx.fillStyle = '#1a202c'; ctx.fillRect(0, 5, 10, 4);              // 눈구멍
+    ctx.fillStyle = '#e53e3e'; ctx.fillRect(-4, -9, 6, 8);             // 깃털
+    if (p.atk <= 0) {                                                  // 쉬는 칼
+      ctx.fillStyle = '#e2e8f0'; ctx.fillRect(12, 4, 4, 26);
+      ctx.fillStyle = '#d69e2e'; ctx.fillRect(9, 26, 10, 3);
+    }
+    ctx.restore();
+  }
+  if (p.atk > 0) {
+    const a = p.atk / 0.16;
+    ctx.strokeStyle = `rgba(255,255,255,${0.4 + a * 0.6})`; ctx.lineWidth = 9; ctx.lineCap = 'round';
+    ctx.beginPath();
+    const cx = p.x + p.w / 2;
+    if (p.atkDown) ctx.arc(cx, p.y + p.h - 10, 40, Math.PI * 0.15, Math.PI * 0.85);
+    else if (p.face > 0) ctx.arc(cx, p.y + 22, 52, -Math.PI * 0.4, Math.PI * 0.35);
+    else ctx.arc(cx, p.y + 22, 52, Math.PI * 0.65, Math.PI * 1.4);
+    ctx.stroke(); ctx.lineCap = 'butt';
+  }
+}
+
+function heart(x, y, s, fill) {
+  ctx.fillStyle = fill; ctx.beginPath();
+  ctx.moveTo(x, y + s * 0.3);
+  ctx.bezierCurveTo(x, y, x - s * 0.5, y, x - s * 0.5, y + s * 0.3);
+  ctx.bezierCurveTo(x - s * 0.5, y + s * 0.6, x, y + s * 0.8, x, y + s);
+  ctx.bezierCurveTo(x, y + s * 0.8, x + s * 0.5, y + s * 0.6, x + s * 0.5, y + s * 0.3);
+  ctx.bezierCurveTo(x + s * 0.5, y, x, y, x, y + s * 0.3);
+  ctx.fill();
+}
+
+function text(str, x, y, size, col, align = 'center') {
+  ctx.font = `bold ${size}px ${FONT}`; ctx.textAlign = align; ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillText(str, x + 2, y + 2);
+  ctx.fillStyle = col; ctx.fillText(str, x, y);
+}
+
+const fmt = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+
+// 만든 사람 밝히기 (CREDITS.md 와 같은 내용)
+const CREDITS = [
+  'Pixel Art Bosses by Admurin (https://admurin.itch.io/) - CC-BY 4.0 - https://opengameart.org/content/pixel-art-bosses',
+  'Animated Slime by Calciumtrice (CC-BY 3.0) https://opengameart.org/content/animated-slime',
+  'Forest Monsters by Calciumtrice, usable under Creative Commons Attribution 3.0 license. https://opengameart.org/content/forest-monsters',
+  'Enemy Galore I by Admurin (https://admurin.itch.io/) - CC-BY 4.0 - https://opengameart.org/content/enemy-galore-i',
+];
+function drawCredits(y) {
+  ctx.font = `12px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(255,255,255,0.75)';
+  text('만든 사람', W / 2, y, 13, '#ffd23f');
+  CREDITS.forEach((c, i) => { ctx.font = `12px ${FONT}`; ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.fillText(c, W / 2, y + 18 + i * 16); });
+}
+
+// 둥근 반투명 판
+function panel(x, y, w, h, a) {
+  const r = 10;
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  ctx.fillStyle = `rgba(10,8,20,${a})`; ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.15)'; ctx.lineWidth = 1.5; ctx.stroke();
+}
+
+function drawHud() {
+  if (state === 'title') {
+    ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(0, 0, W, H);
+    // 제목: 금빛 그라데이션 + 빛
+    ctx.save();
+    ctx.font = `bold 58px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillText('칼 한 자루 보스 사냥', W / 2 + 3, 78 + 4);
+    const tg = ctx.createLinearGradient(0, 50, 0, 106);
+    tg.addColorStop(0, '#fff6c8'); tg.addColorStop(0.5, '#ffd23f'); tg.addColorStop(1, '#d9741c');
+    ctx.shadowColor = 'rgba(255,200,80,0.8)'; ctx.shadowBlur = 24 + Math.sin(clock * 2) * 8;
+    ctx.fillStyle = tg; ctx.fillText('칼 한 자루 보스 사냥', W / 2, 78);
+    ctx.restore();
+    text('보스 다섯 마리를 차례로 물리쳐라!', W / 2, 128, 22, '#ffffff');
+    panel(W / 2 - 330, 156, 660, 218, 0.55);
+    const lines = [
+      'A D (← →)  움직이기     W 또는 Space  점프',
+      '마우스 왼쪽 클릭  보고 있는 쪽으로 베기  (Z 도 됨)',
+      '공중에서 S(↓) 누른 채 클릭  아래 베기 (맞으면 튀어 오름)',
+      'F (마우스 오른쪽)  패링 — 맞기 직전에 누르면 막아냄!',
+      '패링하면 불덩이는 보스에게 되돌아가고, 부딪힌 보스는 크게 다침',
+      'E  검기 날리기 (3번, 천천히 다시 참) — W 누른 채 쓰면 위로',
+      'Shift (X)  대시 (대시하는 동안은 안 맞음)',
+    ];
+    lines.forEach((l, i) => text(l, W / 2, 178 + i * 30, 19, '#e2e8f0'));
+    ctx.globalAlpha = 0.55 + Math.abs(Math.sin(clock * 2.5)) * 0.45;
+    text('클릭 또는 Enter 로 시작', W / 2, 402, 26, '#ffffff');
+    ctx.globalAlpha = 1;
+    drawCredits(458);
+    return;
+  }
+  // 하트 (깎인 하트는 빈 칸, 마지막 하나 남으면 두근두근)
+  for (let i = 0; i < player.maxHp; i++) {
+    const full = i < player.hp, beat = full && player.hp === 1 ? 1 + Math.abs(Math.sin(clock * 6)) * 0.15 : 1;
+    const s = 26 * beat, x = 30 + i * 34, y = 18 - (s - 26) / 2;
+    heart(x, y - 2, s + 4, 'rgba(0,0,0,0.6)');
+    heart(x, y, s, full ? '#ff4d6d' : 'rgba(255,255,255,0.15)');
+    if (full) { ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.fillRect(x - s * 0.3, y + s * 0.18, 4, 4); }
+  }
+  // 검기 칸 (차오르는 중인 칸은 아래부터 채워짐)
+  for (let i = 0; i < MAX_AMMO; i++) {
+    const x = 22 + i * 26, y = 56;
+    ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(x - 2, y - 2, 20, 14);
+    const fill = i < player.ammo ? 1 : (i === player.ammo ? player.ammoT / AMMO_TIME : 0);
+    if (fill > 0) {
+      ctx.fillStyle = fill >= 1 ? '#8fd3ff' : 'rgba(143,211,255,0.4)'; ctx.fillRect(x, y + 10 * (1 - fill), 16, 10 * fill);
+      if (fill >= 1) { ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.fillRect(x, y, 16, 3); }
+    }
+  }
+  // 시간
+  panel(W - 92, 14, 78, 32, 0.45);
+  text(fmt(runTime), W - 53, 30, 20, '#ffffff');
+  // 보스 체력: 판, 깎인 만큼 하얀 꼬리가 천천히 따라옴, 화나는 지점 표시
+  if (boss) {
+    const bw = 460, bx = (W - bw) / 2, by = 50;
+    if (boss.hpShow === undefined) boss.hpShow = boss.hp;
+    boss.hpShow += (boss.hp - boss.hpShow) * 0.06;
+    panel(bx - 14, 10, bw + 28, 62, 0.5);
+    text(`${bossIdx + 1} / ${MAKERS.length}  ${boss.name}${boss.ph2 ? '  (화났다!)' : ''}`, W / 2, 30, 20, boss.ph2 ? '#ff8a8a' : '#ffffff');
+    ctx.fillStyle = '#1a1014'; ctx.fillRect(bx - 2, by - 2, bw + 4, 16);
+    ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.fillRect(bx, by, bw * clamp(boss.hpShow / boss.maxHp, 0, 1), 12);
+    const hg = ctx.createLinearGradient(0, by, 0, by + 12);
+    if (boss.ph2) { hg.addColorStop(0, '#ff8a7a'); hg.addColorStop(1, '#c0182a'); }
+    else { hg.addColorStop(0, '#ffd27a'); hg.addColorStop(1, '#e0702a'); }
+    ctx.fillStyle = hg; ctx.fillRect(bx, by, bw * clamp(boss.hp / boss.maxHp, 0, 1), 12);
+    ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.fillRect(bx, by, bw * clamp(boss.hp / boss.maxHp, 0, 1), 3);
+    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(bx + bw / 2 - 1, by - 2, 2, 16);
+  }
+
+  if (state === 'intro') {
+    ctx.globalAlpha = clamp(1.6 - stateT, 0, 1);
+    text(boss.name, W / 2, H / 2 - 40, 56, '#ffffff');
+    text('등장!', W / 2, H / 2 + 20, 28, '#ffd23f');
+    ctx.globalAlpha = 1;
+  } else if (state === 'clear') {
+    text('물리쳤다!', W / 2, H / 2 - 90, 56, '#ffd23f');
+    if (bossIdx < MAKERS.length - 1 && chest && chest.opened) text('보물상자에서 하트 2개! · 다음 보스가 온다', W / 2, H / 2 - 36, 22, '#ffffff');
+  } else if (state === 'dead') {
+    ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(0, 0, W, H);
+    text('쓰러졌다...', W / 2, H / 2 - 50, 52, '#ff6b6b');
+    text('R  이 보스와 다시 싸우기 (하트 가득)', W / 2, H / 2 + 20, 22, '#ffffff');
+    text('Enter  처음 화면으로', W / 2, H / 2 + 56, 22, '#cbd5e0');
+  } else if (state === 'win') {
+    ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(0, 0, W, H);
+    text('보스 다섯 마리를 모두 물리쳤다!', W / 2, H / 2 - 110, 42, '#ffd23f');
+    text(`걸린 시간  ${fmt(runTime)}`, W / 2, H / 2 - 40, 26, '#ffffff');
+    text(`쓰러진 횟수  ${falls}번`, W / 2, H / 2, 26, '#ffffff');
+    text('Enter  처음 화면으로', W / 2, H / 2 + 50, 22, '#cbd5e0');
+    drawCredits(H / 2 + 100);
+  }
+}
+
+// ===== 돌리기 =====
+let last = 0;
+function loop(t) {
+  const dt = Math.min(1 / 30, (t - last) / 1000 || 0);
+  last = t;
+  step(dt); draw();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
