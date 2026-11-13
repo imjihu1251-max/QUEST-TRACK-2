@@ -96,9 +96,16 @@ addEventListener('keydown', e => {
   down.add(e.code);
 });
 addEventListener('keyup', e => down.delete(e.code));
-// 마우스: 왼쪽 버튼 = 베기, 오른쪽 버튼 = 패링 (마우스 위치는 쓰지 않음)
+// 마우스: 왼쪽 버튼 = 베기, 오른쪽 버튼 = 패링
+// 마우스 위치는 아이템 카드를 고를 때만 씀 (공격 방향과는 상관없음)
+const mouse = { x: -1, y: -1 };
+function setMouse(e) {
+  const r = cv.getBoundingClientRect();
+  mouse.x = (e.clientX - r.left) * W / r.width; mouse.y = (e.clientY - r.top) * H / r.height;
+}
+cv.addEventListener('mousemove', setMouse);
 cv.addEventListener('mousedown', e => {
-  e.preventDefault();
+  e.preventDefault(); setMouse(e);
   const code = 'Mouse' + e.button;
   if (!down.has(code)) hit.add(code);
   down.add(code);
@@ -128,11 +135,45 @@ let state = 'title', stateT = 0, bossIdx = 0, boss = null, player = null;
 let shots = [], waves = [], bolts = [], parts = [], mobs = [], fx = [], chest = null;
 let shake = 0, runTime = 0, falls = 0, clock = 0, freeze = 0, popups = [];
 
+// ===== 부속품 (아이템) =====
+// 보스를 잡으면 3개 중 하나를 고름. 고른 것은 게임이 끝날 때까지 계속 효과가 있음 (같은 것을 또 고르면 더 세짐)
+const ITEMS = [
+  { id: 'whet',   icon: '🗡️', name: '날카로운 숫돌', desc: '칼 공격력 +50%',            max: 3 },
+  { id: 'long',   icon: '📏', name: '긴 칼날',       desc: '칼이 닿는 거리 +30%',       max: 2 },
+  { id: 'boots',  icon: '👢', name: '가벼운 장화',   desc: '달리기 빠르기 +15%',        max: 2 },
+  { id: 'heart',  icon: '❤️', name: '하트 목걸이',   desc: '최대 하트 +1 (바로 1칸 회복)', max: 3 },
+  { id: 'pouch',  icon: '🎒', name: '검기 주머니',   desc: '검기 칸 +1',                max: 2 },
+  { id: 'wind',   icon: '🌀', name: '바람 반지',     desc: '검기가 30% 빨리 다시 참',   max: 2 },
+  { id: 'flame',  icon: '🔥', name: '불꽃 검기',     desc: '검기 공격력 +1',            max: 2 },
+  { id: 'shield', icon: '🛡️', name: '수호의 방패',   desc: '패링할 수 있는 시간이 더 김', max: 2 },
+  { id: 'mirror', icon: '🔮', name: '반사 거울',     desc: '패링으로 주는 피해 +1',     max: 2 },
+  { id: 'fang',   icon: '🦇', name: '흡혈 송곳니',   desc: '칼로 10번 때릴 때마다 하트 1칸 회복', max: 1 },
+  { id: 'wing',   icon: '🕊️', name: '날개 깃털',     desc: '공중에서 한 번 더 점프 (2단 점프)', max: 1 },
+  { id: 'cloak',  icon: '🧥', name: '그림자 망토',   desc: '대시를 더 자주 쓸 수 있음',  max: 2 },
+];
+let perks = {};                                  // 고른 부속품: { id: 고른 횟수 }
+let choices = [], pickHover = -1;
+const pk = id => perks[id] || 0;
+const maxAmmo = () => 3 + pk('pouch');
+const ammoTime = () => 1.5 * Math.pow(0.7, pk('wind'));
+const parryWindow = () => 0.25 + 0.08 * pk('shield');
+function rollChoices() {
+  const ok = ITEMS.filter(it => pk(it.id) < it.max);
+  for (let i = ok.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [ok[i], ok[j]] = [ok[j], ok[i]]; }
+  choices = ok.slice(0, 3);
+}
+function takeItem(it) {
+  perks[it.id] = pk(it.id) + 1;
+  if (it.id === 'heart') { player.maxHp++; player.hp = Math.min(player.maxHp, player.hp + 1); }
+  burst(W / 2, H / 2, '#ffd23f', 40, 400);
+  bossIdx++; startBoss();
+}
+
 function newPlayer(hp) {
   return { x: 120, y: GROUND - 62, w: 30, h: 62, vx: 0, vy: 0, face: 1, onGround: true,
-    hp, maxHp: 5, inv: 0, hurtT: 0, atk: 0, atkCd: 0, atkDown: false, swingHit: false, dash: 0, dashCd: 0,
+    hp, maxHp: 5 + pk('heart'), inv: 0, hurtT: 0, atk: 0, atkCd: 0, atkDown: false, swingHit: false, dash: 0, dashCd: 0,
     atkT: 9, combo: 0, hitAnimT: 9, parry: 0, parryCd: 0, parryT: 9, parryFlash: 0,
-    ammo: 3, ammoT: 0, shootCd: 0 };
+    ammo: maxAmmo(), ammoT: 0, shootCd: 0, hits: 0, airJump: true };
 }
 
 function burst(x, y, col, n, spd) {
@@ -479,7 +520,7 @@ function drawStars(x, y) {
 
 // ===== 흐름 =====
 function startGame() {
-  bossIdx = 0; runTime = 0; falls = 0;
+  bossIdx = 0; runTime = 0; falls = 0; perks = {};
   player = newPlayer(5);
   startBoss();
 }
@@ -494,7 +535,8 @@ function startBoss() {
 // ===== 주인공 =====
 function atkBox(p) {
   if (p.atkDown) return { x: p.x - 14, y: p.y + p.h - 4, w: p.w + 28, h: 46 };
-  return p.face > 0 ? { x: p.x + p.w - 4, y: p.y - 8, w: 64, h: 56 } : { x: p.x - 60, y: p.y - 8, w: 64, h: 56 };
+  const reach = 64 * (1 + 0.3 * pk('long'));       // 긴 칼날
+  return p.face > 0 ? { x: p.x + p.w - 4, y: p.y - 8, w: reach, h: 56 } : { x: p.x + 4 - reach, y: p.y - 8, w: reach, h: 56 };
 }
 
 function updPlayer(dt) {
@@ -506,12 +548,16 @@ function updPlayer(dt) {
   } else {
     const mv = (held('right') ? 1 : 0) - (held('left') ? 1 : 0);
     if (p.hurtT > 0) p.hurtT -= dt;
-    else { p.vx = mv * 300; if (mv) p.face = mv; }
+    else { p.vx = mv * 300 * (1 + 0.15 * pk('boots')); if (mv) p.face = mv; }   // 가벼운 장화
+    if (p.onGround) p.airJump = true;
     if (tap('jump') && p.onGround) { p.vy = -760; p.onGround = false; }
+    else if (tap('jump') && pk('wing') && p.airJump) {      // 날개 깃털: 2단 점프
+      p.airJump = false; p.vy = -700; burst(p.x + p.w / 2, p.y + p.h, '#ffffff', 10, 160);
+    }
     if (!held('jump') && p.vy < -280) p.vy = -280;
     if (tap('dash') && p.dashCd <= 0) {
       if (mv) p.face = mv;
-      p.dash = 0.16; p.dashCd = 0.55;
+      p.dash = 0.16; p.dashCd = 0.55 * Math.pow(0.65, pk('cloak'));   // 그림자 망토
     }
     p.vy += GRAV * dt;
   }
@@ -521,12 +567,12 @@ function updPlayer(dt) {
     p.atkT = 0; p.combo = 1 - p.combo;   // 공격 그림 두 가지를 번갈아
   }
   if (tap('parry') && p.parryCd <= 0) {
-    p.parry = PARRY_WINDOW; p.parryCd = PARRY_CD; p.parryT = 0;
+    p.parry = parryWindow(); p.parryCd = PARRY_CD; p.parryT = 0;
   }
   p.parry = Math.max(0, p.parry - dt); p.parryCd -= dt; p.parryT += dt;
   // 검기 날리기: 3번까지, 1.5초마다 하나씩 다시 참. W(↑)를 누른 채 쓰면 비스듬히 위로
   p.shootCd -= dt;
-  if (p.ammo < MAX_AMMO) { p.ammoT += dt; if (p.ammoT >= AMMO_TIME) { p.ammo++; p.ammoT = 0; } }
+  if (p.ammo < maxAmmo()) { p.ammoT += dt; if (p.ammoT >= ammoTime()) { p.ammo++; p.ammoT = 0; } }
   if (tap('shoot') && p.ammo > 0 && p.shootCd <= 0 && state !== 'dead') {
     p.ammo--; p.shootCd = 0.25;
     p.atkT = 0; p.combo = 0; p.atkDown = false;       // 두 번째 공격 그림으로 휘두름
@@ -557,7 +603,7 @@ function hurtPlayer(fromX) {
 
 // ===== 패링 =====
 // F (또는 마우스 오른쪽) 를 누르고 0.25초 안에 공격을 받으면 막아냄
-const PARRY_WINDOW = 0.25, PARRY_CD = 0.7;
+const PARRY_CD = 0.7;   // 패링 시간은 parryWindow() (수호의 방패로 늘어남)
 function parrySuccess(fromX) {
   const p = player;
   p.parry = 0; p.parryCd = 0;          // 성공하면 바로 또 패링할 수 있음
@@ -607,18 +653,30 @@ function step(dt) {
       chest.t += dt;
       if (!chest.opened && chest.t > 0.9) {
         chest.opened = true;
-        if (bossIdx < MAKERS.length - 1) player.hp = Math.min(5, player.hp + 2);
+        if (bossIdx < MAKERS.length - 1) player.hp = Math.min(player.maxHp, player.hp + 2);
         burst(chest.x, GROUND - 30, '#ff4d6d', 16, 260); burst(chest.x, GROUND - 30, '#ffd23f', 16, 260);
       }
     }
     if (stateT > 2.6) {
-      bossIdx++;
-      if (bossIdx >= MAKERS.length) { state = 'win'; stateT = 0; }
-      else startBoss();
+      if (bossIdx >= MAKERS.length - 1) { bossIdx++; state = 'win'; stateT = 0; }
+      else {
+        rollChoices();
+        if (choices.length) { state = 'pick'; stateT = 0; }
+        else { bossIdx++; startBoss(); }              // 고를 부속품이 하나도 안 남았으면 바로 다음 보스
+      }
     }
   }
+  else if (state === 'pick') {
+    // 1 2 3 키 또는 카드 클릭으로 고르기
+    pickHover = -1;
+    choices.forEach((it, i) => { const c = cardRect(i); if (overlap({ x: mouse.x, y: mouse.y, w: 1, h: 1 }, c)) pickHover = i; });
+    const keys = ['Digit1', 'Digit2', 'Digit3'];
+    let pick = keys.findIndex((k, i) => i < choices.length && hit.has(k));
+    if (pick < 0 && stateT > 0.4 && hit.has('Mouse0') && pickHover >= 0) pick = pickHover;
+    if (pick >= 0) takeItem(choices[pick]);
+  }
   else if (state === 'dead') {
-    if (tap('retry')) { player.hp = 5; startBoss(); }
+    if (tap('retry')) { player.hp = player.maxHp; startBoss(); }
     else if (stateT > 0.5 && tap('start')) { state = 'title'; stateT = 0; }
   }
   else if (state === 'win') { if (stateT > 1 && tap('start')) { state = 'title'; stateT = 0; } }
@@ -648,7 +706,9 @@ function fight(dt) {
     if (!p.swingHit && !boss.hidden && overlap(ab, boss)) {
       p.swingHit = true;
       if (p.atkDown) { p.vy = -640; p.atk = 0; }
-      if (damageBoss(1, clamp(ab.x + ab.w / 2, boss.x, boss.x + boss.w), clamp(ab.y + ab.h / 2, boss.y, boss.y + boss.h))) return;
+      // 흡혈 송곳니: 10번 때릴 때마다 하트 1칸
+      if (pk('fang') && ++p.hits % 10 === 0 && p.hp < p.maxHp) { p.hp++; burst(p.x + p.w / 2, p.y, '#ff4d6d', 12, 200); popups.push({ str: '+1 ❤', x: p.x + p.w / 2, y: p.y - 20, t: 0 }); }
+      if (damageBoss(1 + 0.5 * pk('whet'), clamp(ab.x + ab.w / 2, boss.x, boss.x + boss.w), clamp(ab.y + ab.h / 2, boss.y, boss.y + boss.h))) return;
     }
     // 날아오는 것도 벨 수 있음
     shots = shots.filter(s => {
@@ -666,7 +726,7 @@ function fight(dt) {
   blades = blades.filter(b => {
     b.t += dt; b.x += b.vx * dt; b.y += b.vy * dt;
     const hb = { x: b.x - 14, y: b.y - 18, w: 28, h: 36 };
-    if (!boss.hidden && overlap(hb, boss)) { damageBoss(1, b.x, b.y); return false; }
+    if (!boss.hidden && overlap(hb, boss)) { damageBoss(1 + pk('flame'), b.x, b.y); return false; }
     for (const s of mobs) if (overlap(hb, s)) {
       killMob(s); mobs = mobs.filter(o => o !== s); return false;
     }
@@ -679,7 +739,7 @@ function fight(dt) {
   if (!boss.hidden && overlap(p, boss) && hurtPlayer(bc) === 'parry') {
     const d = (p.x + p.w / 2) < bc ? -1 : 1;
     p.vx = d * 420; p.vy = -300; p.hurtT = 0.2;
-    if (damageBoss(2, clamp(p.x + p.w / 2, boss.x, boss.x + boss.w), p.y + p.h / 2)) return;
+    if (damageBoss(2 + pk('mirror'), clamp(p.x + p.w / 2, boss.x, boss.x + boss.w), p.y + p.h / 2)) return;
   }
 
   // 부하 몬스터 (패링하면 쓰러짐)
@@ -698,7 +758,7 @@ function fight(dt) {
   shots = shots.filter(s => {
     s.vy += s.g * dt; s.x += s.vx * dt; s.y += s.vy * dt;
     if (s.back) {
-      if (!boss.hidden && circleRect(s.x, s.y, s.r, boss)) { killShot(s); damageBoss(1, s.x, s.y); return false; }
+      if (!boss.hidden && circleRect(s.x, s.y, s.r, boss)) { killShot(s); damageBoss(1 + pk('mirror'), s.x, s.y); return false; }
       return s.x > -50 && s.x < W + 50 && s.y > -80 && s.y < H;
     }
     if (circleRect(s.x, s.y, s.r, p)) {
@@ -1020,7 +1080,7 @@ function drawBlades() {
 
 // 맞았을 때 퍼지는 고리
 let rings = [], blades = [];
-const MAX_AMMO = 3, AMMO_TIME = 1.5;
+// 검기 칸 수와 다시 차는 시간은 maxAmmo(), ammoTime() (부속품으로 바뀜)
 const ring = (x, y, col, max = 50) => rings.push({ x, y, col, max, t: 0 });
 
 // ===== 그리기 =====
@@ -1046,12 +1106,13 @@ function draw() {
 
   if (state !== 'title' && boss) {
     // 그림자
-    if (state !== 'clear' || stateT < 0.6) shadow(boss.x + boss.w / 2, boss.y + boss.h, boss.w * 1.1);
+    const bossShown = state !== 'pick' && (state !== 'clear' || stateT < 0.6);   // 잡은 뒤에는 안 보임
+    if (bossShown) shadow(boss.x + boss.w / 2, boss.y + boss.h, boss.w * 1.1);
     for (const s of mobs) shadow(s.x + s.w / 2, s.y + s.h, s.w);
     if (state !== 'dead' || stateT < 0.8) shadow(player.x + player.w / 2, player.y + player.h, 40);
     glow(player.x + player.w / 2, player.y + player.h / 2, 70, '200,225,255', 0.18);   // 기사가 배경에 묻히지 않게
     // 빛 번짐
-    if (bossIdx === 1 && state !== 'clear') glow(boss.x + boss.w / 2, boss.y + boss.h / 2, 150, '255,120,40', 0.35 + Math.sin(clock * 8) * 0.05);
+    if (bossIdx === 1 && bossShown) glow(boss.x + boss.w / 2, boss.y + boss.h / 2, 150, '255,120,40', 0.35 + Math.sin(clock * 8) * 0.05);
     for (const s of shots) if (s.kind === 'wisp') glow(s.x, s.y, 50, '255,140,50', 0.45);
     if (bossIdx === 2 && boss.st === 'throw') glow(boss.x + boss.w / 2, boss.y, 80, '255,140,50', 0.5);
     for (const b of bolts) if (b.t <= 0 && !b.hide) glow(b.x, GROUND - 40, 120, '255,120,40', 0.5);
@@ -1078,7 +1139,7 @@ function draw() {
     }
 
     if (state === 'clear' && boss.drawDead) boss.drawDead(stateT);
-    else if (state !== 'clear' || stateT < 0.6) {
+    else if (bossShown) {
       if (state === 'clear') ctx.globalAlpha = 1 - stateT / 0.6;
       boss.draw();
       ctx.globalAlpha = 1;
@@ -1148,7 +1209,7 @@ function drawTitleCast() {
 function drawParry() {
   const p = player, cx = p.x + p.w / 2, cy = p.y + p.h / 2;
   if (p.parry > 0) {
-    ctx.strokeStyle = `rgba(140,220,255,${0.4 + p.parry / PARRY_WINDOW * 0.6})`; ctx.lineWidth = 5;
+    ctx.strokeStyle = `rgba(140,220,255,${0.4 + p.parry / parryWindow() * 0.6})`; ctx.lineWidth = 5;
     ctx.beginPath();
     if (p.face > 0) ctx.arc(cx, cy, 38, -Math.PI * 0.45, Math.PI * 0.45);
     else ctx.arc(cx, cy, 38, Math.PI * 0.55, Math.PI * 1.45);
@@ -1258,6 +1319,52 @@ function panel(x, y, w, h, a) {
   ctx.strokeStyle = 'rgba(255,255,255,0.15)'; ctx.lineWidth = 1.5; ctx.stroke();
 }
 
+// 아이템 카드 위치
+function cardRect(i) {
+  const n = choices.length, cw = 220, ch = 260, gap = 30, x0 = (W - (n * cw + (n - 1) * gap)) / 2;
+  return { x: x0 + i * (cw + gap), y: 150, w: cw, h: ch };
+}
+function wrapText(str, x, y, maxW, size, col) {
+  ctx.font = `${size}px ${FONT}`; ctx.fillStyle = col; ctx.textAlign = 'center';
+  let line = '', yy = y;
+  for (const word of str.split(' ')) {
+    const t = line ? line + ' ' + word : word;
+    if (ctx.measureText(t).width > maxW && line) { ctx.fillText(line, x, yy); line = word; yy += size + 6; }
+    else line = t;
+  }
+  ctx.fillText(line, x, yy);
+}
+function drawPick() {
+  ctx.fillStyle = 'rgba(5,4,12,0.7)'; ctx.fillRect(0, 0, W, H);
+  text('부속품을 하나 고르세요', W / 2, 80, 40, '#ffd23f');
+  text('카드를 클릭하거나 1 · 2 · 3 키', W / 2, 120, 18, '#cbd5e0');
+  choices.forEach((it, i) => {
+    const c = cardRect(i), on = i === pickHover, lift = on ? -8 : 0;
+    panel(c.x, c.y + lift, c.w, c.h, on ? 0.92 : 0.8);
+    ctx.strokeStyle = on ? '#ffd23f' : 'rgba(255,210,63,0.35)'; ctx.lineWidth = on ? 3 : 1.5;
+    ctx.strokeRect(c.x + 6, c.y + 6 + lift, c.w - 12, c.h - 12);
+    glow(c.x + c.w / 2, c.y + 70 + lift, 60, '255,210,90', on ? 0.35 : 0.15);
+    ctx.font = `52px "Segoe UI Emoji", "Apple Color Emoji", ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff'; ctx.fillText(it.icon, c.x + c.w / 2, c.y + 72 + lift);
+    text(it.name, c.x + c.w / 2, c.y + 140 + lift, 22, '#ffffff');
+    wrapText(it.desc, c.x + c.w / 2, c.y + 180 + lift, c.w - 30, 16, '#cbd5e0');
+    const have = pk(it.id);
+    text(have ? `가진 것 ${have} / ${it.max}` : '새 부속품', c.x + c.w / 2, c.y + c.h - 26 + lift, 14, have ? '#8fd3ff' : '#ffd23f');
+    text(`${i + 1}`, c.x + 24, c.y + 26 + lift, 18, '#ffd23f');
+  });
+}
+// 가진 부속품 아이콘 (화면 왼쪽 위, 검기 칸 아래)
+function drawPerks() {
+  let x = 22;
+  for (const it of ITEMS) {
+    const n = pk(it.id); if (!n) continue;
+    ctx.font = `18px "Segoe UI Emoji", "Apple Color Emoji", ${FONT}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff'; ctx.fillText(it.icon, x, 88);
+    if (n > 1) text(`${n}`, x + 24, 94, 12, '#ffd23f', 'left');
+    x += n > 1 ? 36 : 28;
+  }
+}
+
 function drawHud() {
   if (state === 'title') {
     ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(0, 0, W, H);
@@ -1297,15 +1404,16 @@ function drawHud() {
     if (full) { ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.fillRect(x - s * 0.3, y + s * 0.18, 4, 4); }
   }
   // 검기 칸 (차오르는 중인 칸은 아래부터 채워짐)
-  for (let i = 0; i < MAX_AMMO; i++) {
+  for (let i = 0; i < maxAmmo(); i++) {
     const x = 22 + i * 26, y = 56;
     ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(x - 2, y - 2, 20, 14);
-    const fill = i < player.ammo ? 1 : (i === player.ammo ? player.ammoT / AMMO_TIME : 0);
+    const fill = i < player.ammo ? 1 : (i === player.ammo ? player.ammoT / ammoTime() : 0);
     if (fill > 0) {
       ctx.fillStyle = fill >= 1 ? '#8fd3ff' : 'rgba(143,211,255,0.4)'; ctx.fillRect(x, y + 10 * (1 - fill), 16, 10 * fill);
       if (fill >= 1) { ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.fillRect(x, y, 16, 3); }
     }
   }
+  drawPerks();
   // 시간
   panel(W - 92, 14, 78, 32, 0.45);
   text(fmt(runTime), W - 53, 30, 20, '#ffffff');
@@ -1331,9 +1439,11 @@ function drawHud() {
     text(boss.name, W / 2, H / 2 - 40, 56, '#ffffff');
     text('등장!', W / 2, H / 2 + 20, 28, '#ffd23f');
     ctx.globalAlpha = 1;
+  } else if (state === 'pick') {
+    drawPick();
   } else if (state === 'clear') {
     text('물리쳤다!', W / 2, H / 2 - 90, 56, '#ffd23f');
-    if (bossIdx < MAKERS.length - 1 && chest && chest.opened) text('보물상자에서 하트 2개! · 다음 보스가 온다', W / 2, H / 2 - 36, 22, '#ffffff');
+    if (bossIdx < MAKERS.length - 1 && chest && chest.opened) text('보물상자에서 하트 2개! · 곧 부속품을 고를 수 있어요', W / 2, H / 2 - 36, 22, '#ffffff');
   } else if (state === 'dead') {
     ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(0, 0, W, H);
     text('쓰러졌다...', W / 2, H / 2 - 50, 52, '#ff6b6b');
