@@ -6,3 +6,4 @@
 - Animated Slime by Calciumtrice (CC-BY 3.0) https://opengameart.org/content/animated-slime
 - Forest Monsters by Calciumtrice, usable under Creative Commons Attribution 3.0 license. https://opengameart.org/content/forest-monsters
 - Enemy Galore I by Admurin (https://admurin.itch.io/) - CC-BY 4.0 - https://opengameart.org/content/enemy-galore-i
+- Animated Rat and Bat by Calciumtrice (CC-BY 3.0) https://opengameart.org/content/animated-rat-and-bat
