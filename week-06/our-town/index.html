@@ -2,8 +2,17 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>우리 동네 날씨</title>
+<!-- 폰에 설치되는 앱(PWA) 정보 -->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#2f80ed">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="동네 날씨">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>
   :root {
     --bg1: #2f80ed; --bg2: #8fd3ff;
@@ -21,8 +30,8 @@
   html, body { margin: 0; min-height: 100%; }
   body {
     min-height: 100vh; min-height: 100dvh;
-    display: flex; align-items: center; justify-content: center;
-    padding: 16px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
     font-family: "Malgun Gothic", "Apple SD Gothic Neo", system-ui, sans-serif;
     color: var(--text);
     background: linear-gradient(160deg, var(--bg1), var(--bg2)) fixed;
@@ -47,6 +56,11 @@
   .minmax { margin-top: 14px; font-size: 16px; color: var(--soft); display: flex; justify-content: center; gap: 18px; flex-wrap: wrap; }
   .minmax b { color: var(--text); }
   .when { margin-top: 18px; font-size: 13px; color: var(--soft); }
+  .stale {
+    margin: 14px 0 0; padding: 10px 12px; border-radius: 14px; font-size: 14px; line-height: 1.5;
+    background: rgba(255, 196, 80, 0.25); border: 1px solid rgba(255, 210, 110, 0.6); word-break: keep-all;
+  }
+  .stale b { display: block; font-size: 15px; }
   button {
     margin-top: 16px; font: inherit; font-size: 15px; padding: 10px 18px; border-radius: 14px; cursor: pointer;
     border: 1px solid var(--line); background: rgba(255,255,255,0.2); color: var(--text);
@@ -61,6 +75,9 @@
   .why { font-size: 14px; color: var(--soft); margin-top: 6px; line-height: 1.6; word-break: keep-all; }
   footer { margin-top: 20px; font-size: 12px; color: var(--soft); }
   footer a { color: var(--text); }
+  .install { width: 100%; max-width: 480px; margin-top: 12px; text-align: center; font-size: 14px; color: var(--soft); line-height: 1.6; }
+  .install button { margin-top: 0; background: rgba(255,255,255,0.9); color: #1b4f9c; font-weight: 700; }
+  .install:empty { display: none; }
 </style>
 </head>
 <body>
@@ -70,6 +87,7 @@
   <div class="spinner"></div>
   <div class="msg">날씨를 불러오는 중…</div>
 </main>
+<div class="install" id="install"></div>
 
 <script>
 // 우리 동네: Open-Meteo 지역 검색으로 찾은 평택시 (경기도) 시내 중심
@@ -93,13 +111,33 @@ const app = document.getElementById('app');
 const head = `<div class="place">${PLACE.name}</div><div class="region">${PLACE.region}</div>`;
 const foot = `<footer><a href="https://open-meteo.com/" target="_blank" rel="noopener">Weather data by Open-Meteo.com</a></footer>`;
 
+// ===== 마지막으로 받은 날씨 저장 (이 기기 안에만) =====
+const SAVE_KEY = 'our-town-weather.last';
+function saveLast(data) {
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify({ data, savedAt: Date.now() })); } catch {}
+}
+function loadLast() {
+  try { const v = JSON.parse(localStorage.getItem(SAVE_KEY)); return v && v.data && v.data.current ? v : null; } catch { return null; }
+}
+// "11월 19일 오후 6:45 (3시간 전)"
+function savedText(ms) {
+  const d = new Date(ms), h = d.getHours(), m = String(d.getMinutes()).padStart(2, '0');
+  const ago = Math.round((Date.now() - ms) / 60000);
+  const agoTxt = ago < 1 ? '방금' : ago < 60 ? `${ago}분 전` : ago < 60 * 24 ? `${Math.floor(ago / 60)}시간 전` : `${Math.floor(ago / 1440)}일 전`;
+  return `${d.getMonth() + 1}월 ${d.getDate()}일 ${h < 12 ? '오전' : '오후'} ${h % 12 || 12}:${m} (${agoTxt})`;
+}
+
 function showLoading() {
+  const last = loadLast();
+  if (last) return;                 // 예전 정보가 있으면 그걸 그대로 둔 채 새로 받음 (깜빡임 없이)
   document.body.className = '';
   app.innerHTML = `${head}<div class="spinner"></div><div class="msg">날씨를 불러오는 중…</div>`;
 }
 
-// 못 받아 왔을 때: 빈 화면 대신 까닭을 보여 줌
+// 못 받아 왔을 때: 마지막 정보가 있으면 "언제 받은 것인지"와 같이 보여 주고, 없으면 까닭을 보여 줌
 function showError(title, why) {
+  const last = loadLast();
+  if (last) return showWeather(last.data, { title, why, savedAt: last.savedAt });
   document.body.className = 'error';
   app.innerHTML = `${head}<div class="icon">😢</div><div class="msg">${title}</div><div class="why">${why}</div>
     <button onclick="loadWeather()">다시 시도</button>${foot}`;
@@ -110,12 +148,14 @@ function ampm(iso) {
   return `${h < 12 ? '오전' : '오후'} ${h % 12 || 12}:${m}`;
 }
 
-function showWeather(data) {
+function showWeather(data, stale) {
   const c = data.current, d = data.daily;
   const [word, icon, group] = WORDS[c.weather_code] || ['알 수 없는 날씨', '❔', 'cloudy'];
   const night = !c.is_day && group === 'clear';
   document.body.className = night ? 'night' : group === 'clear' ? '' : group;
+  const staleBox = stale ? `<div class="stale"><b>📴 ${stale.title}</b>${savedText(stale.savedAt)}에 받은 정보를 보여 주고 있어요.<br>${stale.why}</div>` : '';
   app.innerHTML = `${head}
+    ${staleBox}
     <div class="icon">${night ? '🌙' : icon}</div>
     <div class="temp">${Math.round(c.temperature_2m)}°</div>
     <div class="word">${word}</div>
@@ -123,12 +163,18 @@ function showWeather(data) {
       <span>최고 <b>${Math.round(d.temperature_2m_max[0])}°</b></span>
       <span>최저 <b>${Math.round(d.temperature_2m_min[0])}°</b></span>
     </div>
-    <div class="when">${ampm(c.time)} 기준 · 10분마다 새로 고침</div>
-    <button onclick="loadWeather()">↻ 새로 고침</button>
+    <div class="when">${ampm(c.time)} 기준${stale ? '' : ' · 10분마다 새로 고침'}</div>
+    <button onclick="loadWeather()">↻ ${stale ? '다시 받아 오기' : '새로 고침'}</button>
     ${foot}`;
 }
 
+let loading = false;
 async function loadWeather() {
+  if (loading) return;
+  loading = true;
+  try { await fetchWeather(); } finally { loading = false; }
+}
+async function fetchWeather() {
   showLoading();
   if (!navigator.onLine) {
     return showError('인터넷이 끊겨 있어요', '와이파이나 데이터가 켜져 있는지 확인한 뒤 다시 시도해 주세요.');
@@ -140,10 +186,11 @@ async function loadWeather() {
   const timer = setTimeout(() => stop.abort(), 10000);       // 10초가 넘으면 그만 기다림
   let res;
   try {
-    res = await fetch(url, { signal: stop.signal });
+    res = await fetch(url, { signal: stop.signal, cache: 'no-store' });
   } catch (e) {
     clearTimeout(timer);
     if (e.name === 'AbortError') return showError('너무 오래 걸려서 멈췄어요', '날씨 서버가 10초 동안 대답하지 않았어요. 조금 뒤에 다시 시도해 주세요.');
+    if (!navigator.onLine) return showError('인터넷이 끊겨 있어요', '와이파이나 데이터가 켜져 있는지 확인한 뒤 다시 시도해 주세요.');
     return showError('날씨 서버에 닿지 못했어요', '인터넷이 불안정하거나, 학교·회사 인터넷에서 이 주소를 막았을 수 있어요.');
   }
   clearTimeout(timer);
@@ -158,12 +205,36 @@ async function loadWeather() {
   if (!data.current || !data.daily || data.current.temperature_2m == null) {
     return showError('날씨 정보가 비어 있어요', '서버가 보낸 내용에 기온이 없어요. 조금 뒤에 다시 시도해 주세요.');
   }
+  saveLast(data);
   showWeather(data);
 }
 
 addEventListener('online', loadWeather);
+addEventListener('offline', () => showError('인터넷이 끊겨 있어요', '와이파이나 데이터가 다시 켜지면 저절로 새로 받아 와요.'));
 loadWeather();
 setInterval(loadWeather, 10 * 60 * 1000);
+
+// ===== 폰에 설치 (PWA) =====
+// 서비스 워커는 https (GitHub Pages) 나 localhost 에서만 켜짐. 파일을 두 번 눌러 열면 그냥 웹페이지로 돌아감.
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+const installBox = document.getElementById('install');
+const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+let installEvent = null;
+addEventListener('beforeinstallprompt', e => {        // 안드로이드 크롬·삼성 인터넷·컴퓨터 크롬
+  e.preventDefault(); installEvent = e;
+  installBox.innerHTML = '<button id="installBtn">📲 폰에 앱으로 설치하기</button>';
+  document.getElementById('installBtn').onclick = async () => {
+    installEvent.prompt();
+    await installEvent.userChoice; installEvent = null; installBox.innerHTML = '';
+  };
+});
+addEventListener('appinstalled', () => { installBox.innerHTML = '설치됐어요! 홈 화면의 "동네 날씨" 아이콘으로 열 수 있어요.'; });
+// 아이폰 사파리는 설치 버튼이 없어서 방법을 알려 줌
+if (!standalone && /iphone|ipad|ipod/i.test(navigator.userAgent)) {
+  installBox.innerHTML = '아이폰에 설치하기: 아래 <b>공유 버튼(⬆️)</b> → <b>홈 화면에 추가</b>';
+}
 </script>
 </body>
 </html>
