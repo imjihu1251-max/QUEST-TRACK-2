@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>우리 동네 날씨</title>
+<style>
+  :root {
+    --bg1: #2f80ed; --bg2: #8fd3ff;
+    --card: rgba(255,255,255,0.18); --line: rgba(255,255,255,0.3);
+    --text: #ffffff; --soft: rgba(255,255,255,0.8);
+  }
+  body.night  { --bg1: #0b1026; --bg2: #2b3a6e; }
+  body.cloudy { --bg1: #5b6b82; --bg2: #a3b1c6; }
+  body.rain   { --bg1: #2c3e55; --bg2: #5d7896; }
+  body.snow   { --bg1: #7d8fa8; --bg2: #c9d8ea; }
+  body.storm  { --bg1: #1a1d2e; --bg2: #4a4e6a; }
+  body.error  { --bg1: #4a3a4a; --bg2: #7a6170; }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    min-height: 100vh; min-height: 100dvh;
+    display: flex; align-items: center; justify-content: center;
+    padding: 16px;
+    font-family: "Malgun Gothic", "Apple SD Gothic Neo", system-ui, sans-serif;
+    color: var(--text);
+    background: linear-gradient(160deg, var(--bg1), var(--bg2)) fixed;
+    background-color: var(--bg1);
+    transition: background 0.8s;
+  }
+  .card {
+    width: 100%; max-width: 480px;
+    padding: clamp(20px, 6vw, 36px);
+    border-radius: 28px;
+    background: var(--card); border: 1px solid var(--line);
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    text-align: center;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.18);
+  }
+  .place { font-size: clamp(18px, 5vw, 22px); font-weight: 700; }
+  .region { font-size: 14px; color: var(--soft); margin-top: 2px; }
+  .icon { font-size: clamp(72px, 24vw, 120px); line-height: 1.1; margin: 14px 0 4px; animation: bob 4s ease-in-out infinite; }
+  @keyframes bob { 50% { transform: translateY(-6px); } }
+  .temp { font-size: clamp(64px, 22vw, 108px); font-weight: 800; line-height: 1; letter-spacing: -3px; }
+  .word { font-size: clamp(26px, 8vw, 36px); font-weight: 700; margin-top: 8px; }
+  .minmax { margin-top: 14px; font-size: 16px; color: var(--soft); display: flex; justify-content: center; gap: 18px; flex-wrap: wrap; }
+  .minmax b { color: var(--text); }
+  .when { margin-top: 18px; font-size: 13px; color: var(--soft); }
+  button {
+    margin-top: 16px; font: inherit; font-size: 15px; padding: 10px 18px; border-radius: 14px; cursor: pointer;
+    border: 1px solid var(--line); background: rgba(255,255,255,0.2); color: var(--text);
+  }
+  button:hover { background: rgba(255,255,255,0.32); }
+  .spinner {
+    width: 56px; height: 56px; margin: 28px auto 16px; border-radius: 50%;
+    border: 5px solid rgba(255,255,255,0.3); border-top-color: #fff; animation: spin 0.9s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .msg { font-size: 18px; line-height: 1.6; margin-top: 8px; }
+  .why { font-size: 14px; color: var(--soft); margin-top: 6px; line-height: 1.6; word-break: keep-all; }
+  footer { margin-top: 20px; font-size: 12px; color: var(--soft); }
+  footer a { color: var(--text); }
+</style>
+</head>
+<body>
+<main class="card" id="app" aria-live="polite">
+  <div class="place">평택시</div>
+  <div class="region">경기도</div>
+  <div class="spinner"></div>
+  <div class="msg">날씨를 불러오는 중…</div>
+</main>
+
+<script>
+// 우리 동네: Open-Meteo 지역 검색으로 찾은 평택시 (경기도) 시내 중심
+const PLACE = { name: '평택시', region: '경기도', lat: 36.99472, lon: 127.08889 };
+
+// 날씨 번호(WMO) → 한국어 낱말과 그림
+const WORDS = {
+  0: ['맑음', '☀️', 'clear'], 1: ['대체로 맑음', '🌤️', 'clear'], 2: ['구름 조금', '⛅', 'cloudy'], 3: ['흐림', '☁️', 'cloudy'],
+  45: ['안개', '🌫️', 'cloudy'], 48: ['짙은 안개', '🌫️', 'cloudy'],
+  51: ['이슬비', '🌦️', 'rain'], 53: ['이슬비', '🌦️', 'rain'], 55: ['강한 이슬비', '🌧️', 'rain'],
+  56: ['어는 이슬비', '🌧️', 'rain'], 57: ['어는 이슬비', '🌧️', 'rain'],
+  61: ['약한 비', '🌦️', 'rain'], 63: ['비', '🌧️', 'rain'], 65: ['강한 비', '🌧️', 'rain'],
+  66: ['어는 비', '🌧️', 'rain'], 67: ['어는 비', '🌧️', 'rain'],
+  71: ['약한 눈', '🌨️', 'snow'], 73: ['눈', '🌨️', 'snow'], 75: ['강한 눈', '❄️', 'snow'], 77: ['싸락눈', '🌨️', 'snow'],
+  80: ['소나기', '🌦️', 'rain'], 81: ['소나기', '🌧️', 'rain'], 82: ['강한 소나기', '⛈️', 'storm'],
+  85: ['눈 소나기', '🌨️', 'snow'], 86: ['강한 눈 소나기', '❄️', 'snow'],
+  95: ['뇌우', '⛈️', 'storm'], 96: ['우박 뇌우', '⛈️', 'storm'], 99: ['우박 뇌우', '⛈️', 'storm'],
+};
+
+const app = document.getElementById('app');
+const head = `<div class="place">${PLACE.name}</div><div class="region">${PLACE.region}</div>`;
+const foot = `<footer><a href="https://open-meteo.com/" target="_blank" rel="noopener">Weather data by Open-Meteo.com</a></footer>`;
+
+function showLoading() {
+  document.body.className = '';
+  app.innerHTML = `${head}<div class="spinner"></div><div class="msg">날씨를 불러오는 중…</div>`;
+}
+
+// 못 받아 왔을 때: 빈 화면 대신 까닭을 보여 줌
+function showError(title, why) {
+  document.body.className = 'error';
+  app.innerHTML = `${head}<div class="icon">😢</div><div class="msg">${title}</div><div class="why">${why}</div>
+    <button onclick="loadWeather()">다시 시도</button>${foot}`;
+}
+
+function ampm(iso) {
+  const h = +iso.slice(11, 13), m = iso.slice(14, 16);
+  return `${h < 12 ? '오전' : '오후'} ${h % 12 || 12}:${m}`;
+}
+
+function showWeather(data) {
+  const c = data.current, d = data.daily;
+  const [word, icon, group] = WORDS[c.weather_code] || ['알 수 없는 날씨', '❔', 'cloudy'];
+  const night = !c.is_day && group === 'clear';
+  document.body.className = night ? 'night' : group === 'clear' ? '' : group;
+  app.innerHTML = `${head}
+    <div class="icon">${night ? '🌙' : icon}</div>
+    <div class="temp">${Math.round(c.temperature_2m)}°</div>
+    <div class="word">${word}</div>
+    <div class="minmax">
+      <span>최고 <b>${Math.round(d.temperature_2m_max[0])}°</b></span>
+      <span>최저 <b>${Math.round(d.temperature_2m_min[0])}°</b></span>
+    </div>
+    <div class="when">${ampm(c.time)} 기준 · 10분마다 새로 고침</div>
+    <button onclick="loadWeather()">↻ 새로 고침</button>
+    ${foot}`;
+}
+
+async function loadWeather() {
+  showLoading();
+  if (!navigator.onLine) {
+    return showError('인터넷이 끊겨 있어요', '와이파이나 데이터가 켜져 있는지 확인한 뒤 다시 시도해 주세요.');
+  }
+  // API 키 없이 쓰는 Open-Meteo 날씨 주소
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${PLACE.lat}&longitude=${PLACE.lon}`
+    + '&current=temperature_2m,weather_code,is_day&daily=temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=1';
+  const stop = new AbortController();
+  const timer = setTimeout(() => stop.abort(), 10000);       // 10초가 넘으면 그만 기다림
+  let res;
+  try {
+    res = await fetch(url, { signal: stop.signal });
+  } catch (e) {
+    clearTimeout(timer);
+    if (e.name === 'AbortError') return showError('너무 오래 걸려서 멈췄어요', '날씨 서버가 10초 동안 대답하지 않았어요. 조금 뒤에 다시 시도해 주세요.');
+    return showError('날씨 서버에 닿지 못했어요', '인터넷이 불안정하거나, 학교·회사 인터넷에서 이 주소를 막았을 수 있어요.');
+  }
+  clearTimeout(timer);
+  if (!res.ok) {
+    const why = res.status === 429 ? '너무 자주 물어봐서 잠깐 막혔어요. 1분쯤 뒤에 다시 시도해 주세요.'
+      : res.status >= 500 ? '날씨 서버에 문제가 생겼어요. 조금 뒤에 다시 시도해 주세요.'
+      : '보낸 요청이 잘못됐어요.';
+    return showError(`날씨를 받지 못했어요 (오류 ${res.status})`, why);
+  }
+  let data;
+  try { data = await res.json(); } catch { return showError('받은 정보를 읽지 못했어요', '서버가 날씨가 아닌 다른 내용을 보냈어요. 다시 시도해 주세요.'); }
+  if (!data.current || !data.daily || data.current.temperature_2m == null) {
+    return showError('날씨 정보가 비어 있어요', '서버가 보낸 내용에 기온이 없어요. 조금 뒤에 다시 시도해 주세요.');
+  }
+  showWeather(data);
+}
+
+addEventListener('online', loadWeather);
+loadWeather();
+setInterval(loadWeather, 10 * 60 * 1000);
+</script>
+</body>
+</html>
