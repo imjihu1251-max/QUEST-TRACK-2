@@ -214,7 +214,7 @@ const HEAL_CD = 8, DARK_HEAL_CD = 6, CROSS_CD = 2, CROSS_RANGE = 640;
 function crimeCheck(hit) {
   if (state !== 'town' && state !== 'church') return;
   const pc = player.x + player.w / 2;
-  const near = (state === 'church' ? [PRIEST] : NPCS).some(n => Math.abs(pc - n.x) < 120);
+  const near = (state === 'church' ? [PRIEST] : NPCS).some(n => Math.abs(pc - n.x) < 150);
   if (!near) return;
   if (hit && job === 'blessed') blaspheme();             // 은총을 받은 뒤에 칼로 때리면 신을 능멸한 자가 됨
   if (hit && state === 'church' && job !== 'heir') angerSaint();
@@ -225,6 +225,7 @@ function crimeCheck(hit) {
 }
 function angerSaint() {
   saintHits++; saintHitT = 0;
+  shake = Math.max(shake, 4); burst(PRIEST.x, GROUND - 60, '#fff3c0', 10, 220);
   if (saintHits === 1) say2('성녀: 그만두세요...');
   else if (saintHits === 3) say2('성녀: 정말 화나게 하는군요...');
   else if (saintHits >= 5) startSaintFight();
@@ -256,7 +257,7 @@ function blaspheme() {
 }
 function blessedSkills(dt) {
   healCd = Math.max(0, healCd - dt); crossCd = Math.max(0, crossCd - dt);
-  if ((saintHitT += dt) > 4) saintHits = 0;               // 잠깐 안 때리면 성녀의 화가 풀림
+  if ((saintHitT += dt) > 8) saintHits = 0;               // 한참 안 때리면 성녀의 화가 풀림
   const p = player, pcx = p.x + p.w / 2;
   // 떨어지는 십자가: 땅에 닿는 순간 맞은 적이 쓰러짐 (잡몹은 즉사, 보스는 체력 15% 만큼 큰 피해)
   for (const f of crossFx) {
@@ -1324,6 +1325,10 @@ function drawPriest() {
   shadow(PRIEST.x, GROUND, 40);
   if (!drawAnim(PRIEST.idle, clock, PRIEST.x, GROUND, PRIEST.s, PRIEST.face < 0)) box({ x: PRIEST.x - 15, y: GROUND - 80, w: 30, h: 80 }, '#ddd');
   text(PRIEST.name, PRIEST.x, GROUND + 18, 13, '#e2e8f0');
+  if (saintHits > 0 && state === 'church') {                // 성녀의 분노 칸: 5칸이 차면 싸움 시작
+    text('성녀의 분노', PRIEST.x, GROUND - 182, 14, '#ff9a9a');
+    for (let i = 0; i < 5; i++) { ctx.fillStyle = i < saintHits ? '#ff4d4d' : 'rgba(255,255,255,0.25)'; ctx.fillRect(PRIEST.x - 45 + i * 19, GROUND - 170, 16, 9); }
+  }
   if (state === 'church' && nearPriest()) { panel(PRIEST.x - 52, GROUND - 150, 104, 26, 0.8); text('S  말 걸기', PRIEST.x, GROUND - 137, 14, '#ffffff'); }
 }
 const npcNear = () => {                                 // 가까운 주민 중 제일 가까운 한 명
