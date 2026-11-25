@@ -94,8 +94,8 @@ const ANIM = {
   heroAtk2:  { img: img('hero-knight_attack_2'), fw: 134, fh: 83, n: 7,  fps: 14, loop: false, ax: 48, ay: 81 },
   heroHit:   { img: img('hero-knight_hit'),      fw: 134, fh: 83, n: 4,  fps: 12, loop: false, ax: 48, ay: 81 },
   heroDie:   { img: img('hero-knight_death'),    fw: 134, fh: 83, n: 11, fps: 10, loop: false, ax: 48, ay: 81 },
-  // 성당 사제: 큰 그림 한 장(priest.png)에서 '대기' 줄 4칸만 잘라 씀. xs = 칸마다 왼쪽 x, oy = 위쪽 y, ays = 칸마다 발바닥 높이(발이 안 흔들리게)
-  priestIdle: { img: img('priest'), xs: [12, 142, 275, 406], oy: 60, fw: 110, fh: 180, n: 4, fps: 5, loop: true, ax: 55, ay: 171, ays: [174, 171, 170, 171] },
+  // 성녀: 큰 그림 한 장(saint.png)의 첫 줄에서 서 있는 9칸만 잘라 씀. xs = 칸마다 왼쪽 x, oy = 위쪽 y, ays = 칸마다 발바닥 높이(발이 안 흔들리게)
+  priestIdle: { img: img('saint'), xs: [5, 121, 243, 364, 486, 607, 728, 848, 962], oy: 25, fw: 104, fh: 155, n: 9, fps: 7, loop: true, ax: 52, ay: 149, ays: [149, 150, 150, 151, 148, 149, 145, 149, 145] },
 };
 const frameAt = (key, t) => {
   const a = ANIM[key], f = Math.floor(t * a.fps);
@@ -152,7 +152,7 @@ const K = {
   heal: ['KeyJ'], cross: ['KeyK'],   // 신의 은총을 받은 자의 전용 스킬 (이 직업일 때 J 는 베기가 아니라 회복)
   potion: ['KeyQ'], town: ['KeyT'], shop: ['KeyS', 'ArrowDown'], close: ['Escape'],
 };
-const keyOff = (k, c) => k === 'atk' && c === 'KeyJ' && (job === 'blessed' || job === 'blasphemer');
+const keyOff = (k, c) => k === 'atk' && c === 'KeyJ' && (job === 'blessed' || job === 'blasphemer' || job === 'heir');
 const held = k => K[k].some(c => down.has(c) && !keyOff(k, c));
 const tap = k => K[k].some(c => hit.has(c) && !keyOff(k, c));
 
@@ -189,11 +189,11 @@ const ITEMS = [
 let perks = {};                                  // 고른 부속품: { id: 고른 횟수 }
 let choices = [], pickHover = -1;
 const pk = id => perks[id] || 0;
-const maxAmmo = () => 3 + pk('pouch') + scroll + (job === 'ranger' ? 2 : 0);
-const ammoTime = () => 1.5 * Math.pow(0.7, pk('wind')) * (job === 'ranger' ? 0.6 : 1);
-const parryWindow = () => 0.25 + 0.08 * pk('shield') + (job === 'blademaster' ? 0.1 : 0) + (job === 'blessed' ? 0.05 : 0);
-const meleeMul = () => (1 + 0.5 * pk('whet')) * weapon().dmg * (job === 'berserker' ? 1.4 : 1) * (job === 'blessed' ? 1.2 : 1) * (job === 'blasphemer' ? 1.3 : 1);
-const bladeDmg = () => 1 + pk('flame') + (job === 'ranger' ? 1 : 0);
+const maxAmmo = () => 3 + pk('pouch') + scroll + (job === 'ranger' ? 2 : 0) + (job === 'heir' ? 5 : 0);
+const ammoTime = () => 1.5 * Math.pow(0.7, pk('wind')) * (job === 'ranger' ? 0.6 : 1) * (job === 'heir' ? 0.3 : 1);
+const parryWindow = () => 0.25 + 0.08 * pk('shield') + (job === 'blademaster' ? 0.1 : 0) + (job === 'blessed' ? 0.05 : 0) + (job === 'heir' ? 0.3 : 0);
+const meleeMul = () => (1 + 0.5 * pk('whet')) * weapon().dmg * (job === 'berserker' ? 1.4 : 1) * (rageT > 0 ? 2 : 1) * (job === 'blessed' ? 1.2 : 1) * (job === 'blasphemer' ? 1.3 : 1) * (job === 'heir' ? 4 : 1);
+const bladeDmg = () => 1 + pk('flame') + (job === 'ranger' ? 1 : 0) + (job === 'heir' ? 4 : 0);
 function rollChoices() {
   const ok = ITEMS.filter(it => pk(it.id) < it.max);
   for (let i = ok.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [ok[i], ok[j]] = [ok[j], ok[i]]; }
@@ -207,6 +207,8 @@ function takeItem(it) {
 }
 
 // ===== 신의 은총을 받은 자의 스킬 =====
+const healMax = () => job === 'heir' ? 3 : HEAL_CD;
+const crossMax = () => job === 'heir' ? 0.5 : CROSS_CD;
 const HEAL_CD = 8, DARK_HEAL_CD = 6, CROSS_CD = 2, CROSS_RANGE = 640;
 // 마을(성당 포함)에서 주민 가까이서 칼을 휘두르거나 스킬을 쓰면 수배자가 됨
 function crimeCheck(hit) {
@@ -215,9 +217,35 @@ function crimeCheck(hit) {
   const near = (state === 'church' ? [PRIEST] : NPCS).some(n => Math.abs(pc - n.x) < 120);
   if (!near) return;
   if (hit && job === 'blessed') blaspheme();             // 은총을 받은 뒤에 칼로 때리면 신을 능멸한 자가 됨
+  if (hit && state === 'church' && job !== 'heir') angerSaint();
+  if (state !== 'town' && state !== 'church') return;   // (싸움이 시작되면 여기서 끝)
   if (wanted) return;
   wanted = true; shake = 8; say2('수배자가 되었다!');
   ring(pc, player.y + player.h / 2, '#ff4d4d', 120);
+}
+function angerSaint() {
+  saintHits++; saintHitT = 0;
+  if (saintHits === 1) say2('성녀: 그만두세요...');
+  else if (saintHits === 3) say2('성녀: 정말 화나게 하는군요...');
+  else if (saintHits >= 5) startSaintFight();
+}
+// 성녀와의 싸움: 성당 안에서 시작. 이기면 성녀의 후계자, 지면 성당 문 앞에서 깨어남
+function startSaintFight() {
+  saintHits = 0; collectAllCoins();
+  player = newPlayer(0); player.hp = player.maxHp; player.x = 120; player.face = 1;
+  shots = []; waves = []; bolts = []; parts = []; mobs = []; fx = []; blades = []; chest = null; door = null;
+  boss = makeSaint(); bossIdx = -1;
+  fadeIn = 1; state = 'intro'; stateT = 0; shake = 10;
+}
+function saintWin() {
+  job = 'heir'; quest = null; reviveLeft = 5; wanted = false;
+  collectAllCoins();
+  boss = null; shots = []; waves = []; bolts = []; parts = []; mobs = []; fx = []; blades = []; chest = null;
+  player = newPlayer(0); player.hp = player.maxHp;
+  player.x = CH_DOOR + 120; player.face = -1;
+  state = 'church'; stateT = 0; fadeIn = 1;
+  popups.push({ str: '돌이킬 수 없는 자가 되었다!', x: player.x + player.w / 2, y: player.y - 40, t: 0 });
+  burst(player.x + player.w / 2, player.y + 20, '#fff3c0', 60, 420); ring(player.x + player.w / 2, player.y + player.h / 2, '#ffe9a0', 160);
 }
 function blaspheme() {
   job = 'blasphemer'; quest = null; reviveLeft = 0;
@@ -228,6 +256,7 @@ function blaspheme() {
 }
 function blessedSkills(dt) {
   healCd = Math.max(0, healCd - dt); crossCd = Math.max(0, crossCd - dt);
+  if ((saintHitT += dt) > 4) saintHits = 0;               // 잠깐 안 때리면 성녀의 화가 풀림
   const p = player, pcx = p.x + p.w / 2;
   // 떨어지는 십자가: 땅에 닿는 순간 맞은 적이 쓰러짐 (잡몹은 즉사, 보스는 체력 15% 만큼 큰 피해)
   for (const f of crossFx) {
@@ -235,21 +264,25 @@ function blessedSkills(dt) {
     if (!f.hit && f.t >= f.delay + 0.4) {
       f.hit = true;
       burst(f.x, f.y, f.dark ? '#ff4d5e' : '#ffe9a0', 22, 300); ring(f.x, f.y, f.dark ? '#ff8a96' : '#fff3c0', 70); shake = Math.max(shake, 5);
-      if (f.boss) { if (boss && state === 'fight' && boss.hp > 0) damageBoss(Math.ceil(boss.maxHp * 0.15), f.x, f.y); }
+      if (f.boss) { if (boss && state === 'fight' && boss.hp > 0) damageBoss(Math.ceil(boss.maxHp * (job === 'heir' ? 0.3 : 0.15)), f.x, f.y); }
       else if (mobs.includes(f.mob)) { hitMob(f.mob, 9999, f.x, 'cross'); mobs = mobs.filter(o => o !== f.mob); }
     }
   }
   crossFx = crossFx.filter(f => f.t < f.delay + 0.7);
-  const holy = job === 'blessed', dark = job === 'blasphemer';
-  if ((holy || dark) && (tap('heal') || tap('cross'))) crimeCheck();   // 마을에서 쓰면 수배 (스킬은 던전에서만 나감)
-  if ((!holy && !dark) || (state !== 'fight' && state !== 'floor')) return;
+  const holy = job === 'blessed' || job === 'heir', dark = job === 'blasphemer';
+  const healAmt = job === 'heir' ? 99 : 2;   // 돌이킬 수 없는 자는 하트 전부
+  rageT = Math.max(0, rageT - dt);
+  const basic = job === 'berserker' || job === 'ranger' || job === 'blademaster';   // 일반 직업: K 키 스킬 하나씩
+  if ((holy || dark || basic) && (tap('heal') || tap('cross'))) crimeCheck();   // 마을에서 쓰면 수배 (스킬은 던전에서만 나감)
+  if ((!holy && !dark && !basic) || (state !== 'fight' && state !== 'floor')) return;
+  if (basic) { basicSkill(); return; }
   if (dark) { darkSkills(); return; }
   if (tap('heal') && healCd <= 0) {                       // J: 하트 2칸 회복 (쿨타임 8초)
     if (p.hp >= p.maxHp) say2('하트가 가득해요');
     else {
-      healCd = HEAL_CD; p.hp = Math.min(p.maxHp, p.hp + 2);
+      healCd = healMax(); p.hp = Math.min(p.maxHp, p.hp + healAmt);
       burst(pcx, p.y + 20, '#ffe9a0', 22, 220); ring(pcx, p.y + p.h / 2, '#fff3c0', 70);
-      popups.push({ str: '+2 ❤', x: pcx, y: p.y - 20, t: 0 });
+      popups.push({ str: healAmt > 9 ? '하트 가득!' : `+${healAmt} ❤`, x: pcx, y: p.y - 20, t: 0 });
     }
   }
   if (tap('cross') && crossCd <= 0) {                     // K: 주변 모든 적에게 십자가 (쿨타임 14초)
@@ -257,7 +290,7 @@ function blessedSkills(dt) {
     const bossHere = boss && state === 'fight' && boss.hp > 0 && Math.abs(boss.x + boss.w / 2 - pcx) < CROSS_RANGE * 1.4;
     if (!targets.length && !bossHere) say2('주변에 적이 없어요');
     else {
-      crossCd = CROSS_CD;
+      crossCd = crossMax();
       targets.forEach((m, i) => crossFx.push({ x: m.x + m.w / 2, y: m.y + m.h / 2, t: 0, delay: i * 0.06, mob: m }));
       if (bossHere) crossFx.push({ x: boss.x + boss.w / 2, y: boss.y + boss.h / 2, t: 0, delay: 0.15, boss: true });
       popups.push({ str: '신의 축복!', x: pcx, y: p.y - 30, t: 0 });
@@ -265,6 +298,39 @@ function blessedSkills(dt) {
     }
   }
 }
+// 일반 직업 스킬 (K): 광전사 분노 / 명사수 난사 / 검객 검풍
+const BASIC_SKILL = {
+  berserker:   { name: '분노', cd: 15 },
+  ranger:      { name: '난사', cd: 8 },
+  blademaster: { name: '검풍', cd: 6 },
+};
+function basicSkill() {
+  if (!tap('cross') || crossCd > 0) return;
+  const p = player, pcx = p.x + p.w / 2, sk = BASIC_SKILL[job];
+  if (job === 'berserker') {                              // 5초 동안 공격력 2배, 휘두르기 40% 빠름
+    rageT = 5; crossCd = sk.cd;
+    burst(pcx, p.y + 20, '#ff4a2e', 30, 320); ring(pcx, p.y + p.h / 2, '#ff4a2e', 110); shake = 6;
+    popups.push({ str: '분노!', x: pcx, y: p.y - 30, t: 0 });
+  } else if (job === 'ranger') {                          // 검기 9발을 부채꼴로 한꺼번에 (검기 칸은 안 씀)
+    crossCd = sk.cd; p.atkT = 0; p.combo = 0;
+    for (let i = 0; i < 9; i++) {
+      const a = (i - 4) * 0.13, sp = 820;
+      blades.push({ x: pcx + p.face * 20, y: p.y + p.h * 0.4, vx: p.face * sp * Math.cos(a), vy: sp * Math.sin(a), t: 0 });
+    }
+    ring(pcx, p.y + p.h / 2, '#7aff9a', 90);
+    popups.push({ str: '난사!', x: pcx, y: p.y - 30, t: 0 });
+  } else if (job === 'blademaster') {                     // 바라보는 쪽 앞 450픽셀의 모든 적을 벰 (잡몹 3, 보스 4 피해)
+    crossCd = sk.cd; p.atk = 0.16; p.atkT = 0; p.combo = 1 - p.combo;
+    const inFront = x => p.face > 0 ? (x > pcx - 20 && x < pcx + 450) : (x < pcx + 20 && x > pcx - 450);
+    const dead = mobs.filter(m => inFront(m.x + m.w / 2) && hitMob(m, 3, pcx, 'skill'));
+    mobs = mobs.filter(m => !dead.includes(m));
+    if (boss && state === 'fight' && boss.hp > 0 && inFront(boss.x + boss.w / 2)) damageBoss(4, boss.x + boss.w / 2, boss.y + boss.h / 2);
+    for (let i = 1; i <= 6; i++) { const x = pcx + p.face * i * 75; burst(x, p.y + 30, '#bfe4ff', 8, 260); ring(x, p.y + p.h / 2, '#8fd3ff', 40); }
+    shake = 6;
+    popups.push({ str: '검풍!', x: pcx, y: p.y - 30, t: 0 });
+  }
+}
+
 // 신을 능멸한 자의 스킬: J 흡혈(주변 적 피해 3 + 하트 1 회복), K 역십자가(주변 잡몹 즉사, 하트 1칸 소모)
 function darkSkills() {
   const p = player, pcx = p.x + p.w / 2;
@@ -321,7 +387,7 @@ function drawCross(x, y, s, dark) {
 
 function newPlayer(hp) {
   return { x: 120, y: GROUND - 62, w: 30, h: 62, vx: 0, vy: 0, face: 1, onGround: true,
-    hp, maxHp: 5 + pk('heart') + 2 * armor + (job === 'berserker' || job === 'blessed' || job === 'blasphemer' ? 1 : 0), inv: 0, hurtT: 0, atk: 0, atkCd: 0, atkDown: false, swingHit: false, dash: 0, dashCd: 0,
+    hp, maxHp: 5 + pk('heart') + 2 * armor + (job === 'berserker' || job === 'blessed' || job === 'blasphemer' ? 1 : 0) + (job === 'heir' ? 6 : 0), inv: 0, hurtT: 0, atk: 0, atkCd: 0, atkDown: false, swingHit: false, dash: 0, dashCd: 0,
     atkT: 9, combo: 0, hitAnimT: 9, parry: 0, parryCd: 0, parryT: 9, parryFlash: 0,
     ammo: maxAmmo(), ammoT: 0, shootCd: 0, hits: 0, airJump: true };
 }
@@ -334,6 +400,55 @@ function burst(x, y, col, n, spd) {
 }
 // 한 번 재생하고 사라지는 그림 (도깨비불 꺼짐, 슬라임 쓰러짐)
 const playFx = (key, x, y, scale, flip = false) => fx.push({ key, x, y, scale, flip, t: 0 });
+
+// ===== 숨은 보스: 성녀 (성당에서 계속 때리면 싸움) =====
+function makeSaint() {
+  return {
+    saint: true, name: '성녀', maxHp: 40, hp: 40, x: 720, y: GROUND - 100, w: 56, h: 100,
+    vx: 0, vy: 0, face: -1, st: 'idle', t: 1.2, flash: 0, ph2: false,
+    pal: { sky1: '#1c1424', sky2: '#4a3a4c', hill: '#3a2c40', ground: '#4a3a4c', top: '#6a4a30' },
+    update(dt) {
+      const pc = player.x + player.w / 2, bc = this.x + this.w / 2;
+      if (!this.ph2 && this.hp <= this.maxHp / 2) {
+        this.ph2 = true; burst(bc, this.y + 30, '#fff3c0', 40, 360); shake = 10;
+        popups.push({ str: '성녀가 진심이 되었다!', x: bc, y: this.y - 20, t: 0 });
+      }
+      this.face = pc < bc ? -1 : 1;
+      this.t -= dt;
+      if (this.st === 'idle') {
+        const d = pc - bc;                                  // 너무 가까우면 물러나고, 너무 멀면 다가옴
+        this.vx = Math.abs(d) < 220 ? -Math.sign(d || 1) * 120 : Math.abs(d) > 430 ? Math.sign(d) * 90 : 0;
+        if (this.t <= 0) {
+          if (Math.random() < 0.5) { this.st = 'orbs'; this.t = this.ph2 ? 0.5 : 0.7; }
+          else { this.st = 'pillars'; this.t = this.ph2 ? 0.55 : 0.75; this.ox = pc; }
+          this.vx = 0;
+        }
+      } else if (this.st === 'orbs') {
+        if (this.t <= 0) {                                  // 빛 구슬: 칼로 베거나 패링하면 돌려보냄
+          const n = this.ph2 ? 5 : 3, sy = this.y + 30, base = Math.atan2(player.y + player.h / 2 - sy, pc - bc);
+          for (let i = 0; i < n; i++) {
+            const a = base + (i - (n - 1) / 2) * 0.28, sp = 330;
+            shots.push({ x: bc, y: sy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r: 12, g: 0, kind: 'fire' });
+          }
+          this.st = 'idle'; this.t = this.ph2 ? 0.9 : 1.4;
+        }
+      } else if (this.st === 'pillars') {
+        if (this.t <= 0) {                                  // 빛기둥: 예고선이 보인 뒤 내리꽂힘
+          const offs = this.ph2 ? [-220, -110, 0, 110, 220] : [-110, 0, 110];
+          offs.forEach(o => bolts.push({ x: clamp(this.ox + o, 20, W - 20), t: 0.75, on: 0.3 }));
+          this.st = 'idle'; this.t = this.ph2 ? 1.0 : 1.6;
+        }
+      }
+      this.x = clamp(this.x + this.vx * dt, 40, W - this.w - 40);
+    },
+    draw() {
+      const x = this.x + this.w / 2, y = this.y + this.h;
+      if (this.st !== 'idle') glow(x, this.y + 30, 90, '255,230,150', 0.45 + Math.sin(clock * 20) * 0.1);
+      if (this.ph2) glow(x, this.y + 50, 140, '255,210,120', 0.22);
+      if (!drawAnim('priestIdle', clock * (this.st === 'idle' ? 1 : 1.6), x, y, 0.75, this.face < 0, bossFilter(this))) box(this, '#eee');
+    },
+  };
+}
 
 // ===== 보스 1: 큰 악마 =====
 function makeDemon() {
@@ -922,7 +1037,7 @@ function startGame() {
   runTime = 0; falls = 0; perks = {}; floor = 1; bossIdx = 0;
   gold = 0; potions = 0; armor = 0; scroll = 0; weaponId = 'basic'; owned = { basic: true }; coins = [];
   player = newPlayer(5);
-  job = null; quest = null; reviveLeft = 0; wanted = false; healCd = 0; crossCd = 0; crossFx = [];
+  job = null; quest = null; reviveLeft = 0; wanted = false; rageT = 0; healCd = 0; crossCd = 0; crossFx = [];
   goTown();
 }
 function goTown(fromDungeon = false, atChurch = false) {
@@ -1090,24 +1205,28 @@ const inTown = () => state === 'town' || state === 'shop' || (state === 'talk' &
 const worldW = () => inTown() ? TOWN_W : W;
 
 // 직업 (전직). 한 번에 하나만, 스승의 수련(퀘스트)을 끝내면 됨
+let rageT = 0;                                          // 광전사 K 분노가 남은 시간
+let saintHits = 0, saintHitT = 0;                      // 성당에서 성녀를 계속 때린 횟수 (5번이면 싸움 시작)
 let wanted = false;                                    // 수배자: 마을에서 주민 곁에서 칼·스킬을 쓰면 됨. 성당 사제에게 헌금(벌금)을 내면 풀림
 const FINE = 50;
 let healCd = 0, crossCd = 0, crossFx = [];             // 신의 은총 스킬: 회복(J) 쿨타임, 십자가(K) 쿨타임, 떨어지는 십자가들
 let job = null, quest = null, reviveLeft = 0;                          // quest: { job, have, need }
 const JOBS = {
-  berserker:   { name: '광전사', col: '255,90,60',   desc: '칼 공격력 +40%, 최대 하트 +1',
+  berserker:   { name: '광전사', col: '255,90,60',   desc: '칼 공격력 +40%, 최대 하트 +1, K 분노(5초간 공격 2배·휘두르기 빠름, 15초)',
                  qtype: 'kill',  need: 30, qtext: '던전에서 몬스터 30마리 잡기' },
-  ranger:      { name: '명사수', col: '120,230,140', desc: '검기 칸 +2, 검기가 40% 빨리 참, 검기 공격력 +1',
+  ranger:      { name: '명사수', col: '120,230,140', desc: '검기 칸 +2, 검기가 40% 빨리 참, 검기 공격력 +1, K 난사(검기 9발 부채꼴, 8초)',
                  qtype: 'blade', need: 12, qtext: '검기로 몬스터 12마리 잡기' },
-  blademaster: { name: '검객',   col: '140,200,255', desc: '휘두르기 30% 빠름, 대시 자주, 패링 시간 +0.1초',
+  blademaster: { name: '검객',   col: '140,200,255', desc: '휘두르기 30% 빠름, 대시 자주, 패링 시간 +0.1초, K 검풍(앞쪽 적 모두 베기, 6초)',
                  qtype: 'parry', need: 10, qtext: '패링 10번 성공하기' },
   // 성당 사제의 축복으로만 얻는 직업 (수련 없음)
   // 신의 은총을 받은 자가 마을에서 주민을 칼로 베면 바뀌는 직업 (스킬 셋이 어둠으로 바뀜)
   blasphemer:  { name: '신을 능멸한 자', col: '255,70,90', desc: '칼 +30%, J 흡혈(주변 적에게 피해 3 + 하트 1 회복), K 역십자가(주변 잡몹 즉사, 하트 1칸 소모). 은총의 힘은 잃음' },
+  // 성녀를 쓰러뜨리면 받는 직업 (가장 셈)
+  heir:        { name: '돌이킬 수 없는 자', col: '255,244,200', desc: '칼 4배, 하트 +6, 검기 칸 +5·검기 피해 +4·검기 3배 빠름, 패링 +0.3초, 돌진 3배 자주, 이동 +30%, 맞으면 2초 무적, 골드 2배, 다섯 번 부활, J 하트 전부 회복(3초), K 십자가(0.5초, 보스 30%)' },
   blessed:     { name: '신의 은총을 받은 자', col: '255,225,130', desc: '칼 +20%, 하트 +1, 쓰러져도 골드 안 잃음, 한 번 부활, J 회복, K 십자가로 주변 적 즉사' },
 };
 const isJob = id => job === id;
-const atkCdNow = () => weapon().cd * (isJob('blademaster') ? 0.7 : 1);
+const atkCdNow = () => weapon().cd * (isJob('blademaster') ? 0.7 : 1) * (rageT > 0 ? 0.6 : 1);
 function questEvent(type) {
   if (!quest || JOBS[quest.job].qtype !== type || quest.have >= quest.need) return;
   quest.have++;
@@ -1180,7 +1299,7 @@ const SHEET_NPCS = [
   { id: 'dangel', name: '타천사 리리엘', x: 2410, sheet: [401, 782, 124, 154], s: 0.649,
     tips: ['날개가 검다고 마음까지 검은 건 아니야.', '하늘에서 쫓겨났지만, 여기도 나쁘지 않아.', '쓰러져도 포기하지 마. 다시 일어나면 되니까.'] },
   { id: 'angel', name: '천사 미카', x: 2560, sheet: [11, 772, 122, 160], s: 0.625,
-    tips: ['축복이 함께하길!', '착한 일을 하면 좋은 일이 생겨요.', '성당 사제님께 말을 걸어 보세요. 가끔 은총을 내려 주신대요.'] },
+    tips: ['축복이 함께하길!', '착한 일을 하면 좋은 일이 생겨요.', '성당의 성녀님께 말을 걸어 보세요. 가끔 은총을 내려 주신대요.'] },
   { id: 'hknight', name: '성기사 아론', x: 2640, sheet: [1202, 775, 115, 186], s: 0.591,
     tips: ['신의 이름으로 이 마을을 지킨다.', '성스러운 갑옷은 빛나지만, 닦는 건 힘들다.', '던전에서 돌아오면 성당에서 기도를 올려라.'] },
   { id: 'dragon', name: '문지기 용 드라고', x: 2700, sheet: [789, 768, 147, 170], s: 0.676,
@@ -1196,7 +1315,7 @@ for (const n of SHEET_NPCS.filter(n => SHEET_USE.has(n.id))) {
 }
 for (const n of NPCS) { n.face = -1; n.tipI = 0; n.atkT = 9; n.home = n.x; n.wt = 0; }
 // 성당 사제: 성당 안에서만 보임. 그림은 오른쪽을 봄
-const PRIEST = { id: 'priest', name: '성당 사제', x: 560, idle: 'priestIdle', s: 0.5, church: true, portrait: { s: 1.0, dy: 131 }, face: -1, tipI: 0, home: 560,
+const PRIEST = { id: 'priest', name: '성녀', x: 560, idle: 'priestIdle', s: 0.55, church: true, portrait: { s: 0.9, dy: 94 }, face: -1, tipI: 0, home: 560,
   tips: ['쓰러진 모험가는 이 성당에서 다시 눈을 뜨지. 몸조심하렴.', '던전에서 쓰러져도 괜찮아. 골드만 조금 잃을 뿐이야.',
          '5층마다 보스가 기다리고 있어. 포션을 챙겨 가렴.', '여기는 조용하지? 마음이 급할 땐 잠깐 쉬어 가도 좋아.'] };
 const nearPriest = () => Math.abs(player.x + player.w / 2 - PRIEST.x) < 60;
@@ -1260,6 +1379,8 @@ function talkTo(n) {
     const L = n.job ? ['수배자에게는 가르칠 수 없다. 먼저 성당에 가서 용서를 받아라.']
       : ['히익! 수, 수배자다! 오지 마세요!', '성당에 가서 헌금을 내고 오세요...', '제발 칼은 치워 주세요!'];
     lines.push({ t: L[n.tipI++ % L.length] });
+  } else if (n.church && job === 'heir') {
+    lines.push({ t: '당신은 저를 이겼어요. 이제 이 성당의 빛은 당신의 것이에요.' });
   } else if (n.church && job === 'blasphemer') {
     lines.push({ t: '신을 능멸한 자여... 이곳에서 물러나라.' });
   } else if (n.church && !job && Math.random() < 1 / 10) {      // 사제: 10번에 1번 꼴로, 수련 없이 바로 전직할 기회
@@ -1410,7 +1531,7 @@ function updCoins(dt, pullAll) {
       if (c.y > GROUND - 8) { c.y = GROUND - 8; c.vy *= -0.4; c.vx *= 0.7; }
       c.x = clamp(c.x, 8, W - 8);
     }
-    if (d < 26 && c.t > 0.3) { gold += c.v; goldFlash = 0.25; return false; }
+    if (d < 26 && c.t > 0.3) { gold += c.v * (job === 'heir' ? 2 : 1); goldFlash = 0.25; return false; }
     return true;
   });
 }
@@ -1520,7 +1641,7 @@ function updPlayer(dt) {
   } else {
     const mv = (held('right') ? 1 : 0) - (held('left') ? 1 : 0);
     if (p.hurtT > 0) p.hurtT -= dt;
-    else { p.vx = mv * 300 * (1 + 0.15 * pk('boots')); if (mv) p.face = mv; }   // 가벼운 장화
+    else { p.vx = mv * 300 * (1 + 0.15 * pk('boots')) * (job === 'heir' ? 1.3 : 1); if (mv) p.face = mv; }   // 가벼운 장화
     if (p.onGround) p.airJump = true;
     if (tap('jump') && p.onGround) { p.vy = -760; p.onGround = false; }
     else if (tap('jump') && pk('wing') && p.airJump) {      // 날개 깃털: 2단 점프
@@ -1529,7 +1650,7 @@ function updPlayer(dt) {
     if (!held('jump') && p.vy < -280) p.vy = -280;
     if (tap('dash') && p.dashCd <= 0) {
       if (mv) p.face = mv;
-      p.dash = 0.16; p.dashCd = 0.55 * Math.pow(0.65, pk('cloak')) * (job === 'blademaster' ? 0.6 : 1);   // 그림자 망토
+      p.dash = 0.16; p.dashCd = 0.55 * Math.pow(0.65, pk('cloak')) * (job === 'blademaster' ? 0.6 : 1) * (job === 'heir' ? 0.3 : 1);   // 그림자 망토
     }
     p.vy += GRAV * dt;
   }
@@ -1573,13 +1694,13 @@ function hurtPlayer(fromX) {
   if (state !== 'fight' && state !== 'floor') return;
   if (p.parry > 0) { parrySuccess(fromX); return 'parry'; }
   if (p.inv > 0 || p.dash > 0) return;
-  p.hp--; p.inv = 1.0; p.hurtT = 0.25; p.hitAnimT = 0;
+  p.hp--; p.inv = job === 'heir' ? 2.0 : 1.0; p.hurtT = 0.25; p.hitAnimT = 0;
   const d = (p.x + p.w / 2) < fromX ? -1 : 1;
   p.vx = d * 360; p.vy = -380; shake = 8;
   burst(p.x + p.w / 2, p.y + 20, '#ff4d4d', 14, 220);
   ring(p.x + p.w / 2, p.y + p.h / 2, '#ff6b6b', 40);
   if (p.hp <= 0) {
-    if (job === 'blessed' && reviveLeft > 0) {          // 신의 은총: 한 번, 그 자리에서 하트 가득 되살아남
+    if ((job === 'blessed' || job === 'heir') && reviveLeft > 0) {          // 신의 은총: 한 번, 그 자리에서 하트 가득 되살아남
       reviveLeft--; p.hp = p.maxHp; p.inv = 2.5;
       popups.push({ str: '신의 은총으로 되살아났다!', x: p.x + p.w / 2, y: p.y - 30, t: 0 });
       ring(p.x + p.w / 2, p.y + p.h / 2, '#ffe9a0', 140); burst(p.x + p.w / 2, p.y + 20, '#ffe9a0', 40, 360);
@@ -1683,7 +1804,8 @@ function step(dt) {
       }
     }
     if (stateT > 2.6) {
-      if (floor >= FLOORS) { state = 'win'; stateT = 0; }
+      if (boss && boss.saint) saintWin();
+      else if (floor >= FLOORS) { state = 'win'; stateT = 0; }
       else {
         rollChoices();
         if (choices.length) { state = 'pick'; stateT = 0; }
@@ -1702,7 +1824,7 @@ function step(dt) {
   }
   else if (state === 'dead') {
     if (stateT > 0.8 && tap('start')) {               // 성당에서 부활: 골드 절반 잃고, 이 구역 첫 층부터
-      if (job !== 'blessed') gold = Math.floor(gold / 2);   // 신의 은총을 받은 자는 골드를 안 잃음
+      if (job !== 'blessed' && job !== 'heir') gold = Math.floor(gold / 2);   // 신의 은총을 받은 자는 골드를 안 잃음
       coins = [];
       floor = section() * BOSS_EVERY + 1; player.hp = player.maxHp; goTown(true, true);
       popups.push({ str: '성당에서 깨어났다', x: player.x + player.w / 2, y: player.y - 30, t: 0 });
@@ -2316,7 +2438,8 @@ const BGS = [bgDusk(), bgCave(), bgVolcano(), bgHell(), bgGrave(), bgTown(), bgA
 const SEC_BG = [0, 1, 2, 3, 4, 6, 7];   // 구역 → 배경 번호 (5번은 마을)
 const TOWN_WORLD = bgTownWorld();   // 넓은 마을 땅
 const VIGNETTE = makeVignette();
-const stageNow = () => state === 'title' ? 0 : (inTown() || inChurch()) ? 5 : SEC_BG[section()];
+const inSaintArena = () => !!(boss && boss.saint);
+const stageNow = () => state === 'title' ? 0 : (inTown() || inChurch() || inSaintArena()) ? 5 : SEC_BG[section()];
 
 // 떠다니는 빛: 반딧불(숲) / 반짝이는 먼지(동굴) / 불씨(화산)
 let amb = [];
@@ -2402,7 +2525,7 @@ function draw() {
   // 배경 (흔들릴 때 가장자리가 비지 않게 조금 크게)
   const st = stageNow();
   ctx.fillStyle = pal.ground; ctx.fillRect(-20, -20, W + 40, H + 40);
-  ctx.drawImage(inChurch() ? CHURCH_IN : BGS[st], 0, 0);
+  ctx.drawImage(inChurch() || inSaintArena() ? CHURCH_IN : BGS[st], 0, 0);
   if (st === 2 || st === 3) {                       // 땅속 용암 금이 숨 쉬듯 빛남
     ctx.strokeStyle = `rgba(255,${110 + Math.sin(clock * 3) * 40 | 0},30,${0.6 + Math.sin(clock * 2) * 0.3})`;
     ctx.lineWidth = 2;
@@ -2424,6 +2547,7 @@ function draw() {
     if (bossShown) shadow(boss.x + boss.w / 2, boss.y + boss.h, boss.w * 1.1);
     for (const s of mobs) shadow(s.x + s.w / 2, s.y + s.h, s.w);
     if (state !== 'dead' || stateT < 0.8) shadow(player.x + player.w / 2, player.y + player.h, 40);
+    if (rageT > 0) glow(player.x + player.w / 2, player.y + player.h / 2, 110, '255,60,30', 0.35 + Math.sin(clock * 20) * 0.1);
     glow(player.x + player.w / 2, player.y + player.h / 2, job ? 80 : 70, job ? JOBS[job].col : '200,225,255', job ? 0.28 : 0.18);   // 기사가 배경에 묻히지 않게
     // 빛 번짐
     if (bossIdx === 1 && bossShown) glow(boss.x + boss.w / 2, boss.y + boss.h / 2, 150, '255,120,40', 0.35 + Math.sin(clock * 8) * 0.05);
@@ -2750,7 +2874,7 @@ function drawHud() {
   drawPerks();
   // 직업 · 수련
   if (job) text(`직업: ${JOBS[job].name}`, 22, 116, 15, `rgb(${JOBS[job].col})`, 'left');
-  if (wanted) text('수배 중 · 성당 사제에게 헌금 ' + FINE + 'G', 22, 138, 15, '#ff6b6b', 'left');
+  if (wanted) text('수배 중 · 성녀에게 헌금 ' + FINE + 'G', 22, 138, 15, '#ff6b6b', 'left');
   if (quest) {
     const J = JOBS[quest.job], done = quest.have >= quest.need;
     text(done ? `수련 완료! 마을의 스승에게` : `수련: ${J.qtext} (${quest.have}/${quest.need})`, 22, job ? 136 : 116, 13, done ? '#ffd23f' : '#cbd5e0', 'left');
@@ -2763,14 +2887,20 @@ function drawHud() {
   ctx.font = `16px "Segoe UI Emoji", "Apple Color Emoji", ${FONT}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.fillStyle = '#fff'; ctx.fillText('🧪', W - 82, 67);
   text(`${potions} (Q)`, W - 60, 67, 15, potions ? '#ffffff' : '#8a8a9a', 'left');
-  if (job === 'blessed' || job === 'blasphemer') {      // 스킬 쿨타임: J 회복(흡혈), K 십자가(역십자가)
+  if (job === 'blessed' || job === 'blasphemer' || job === 'heir') {      // 스킬 쿨타임: J 회복(흡혈), K 십자가(역십자가)
     const dk = job === 'blasphemer';
-    [[dk ? 'J 흡혈' : 'J 회복', healCd, dk ? DARK_HEAL_CD : HEAL_CD], [dk ? 'K 역십자가' : 'K 십자가', crossCd, CROSS_CD]].forEach(([nm, cd, max], i) => {
+    [[dk ? 'J 흡혈' : 'J 회복', healCd, dk ? DARK_HEAL_CD : healMax()], [dk ? 'K 역십자가' : 'K 십자가', crossCd, crossMax()]].forEach(([nm, cd, max], i) => {
       const bx = W - 170 + i * 80;
       panel(bx, 88, 76, 26, 0.45);
       ctx.fillStyle = cd > 0 ? 'rgba(255,255,255,0.18)' : 'rgba(255,225,130,0.45)'; ctx.fillRect(bx, 88, 76 * (cd > 0 ? 1 - cd / max : 1), 26);
       text(cd > 0 ? `${nm} ${Math.ceil(cd)}` : nm, bx + 38, 101, 13, cd > 0 ? '#aab' : '#ffe9a0');
     });
+  }
+  if (BASIC_SKILL[job]) {                               // 일반 직업: K 스킬 하나
+    const sk = BASIC_SKILL[job], bx = W - 90;
+    panel(bx, 88, 76, 26, 0.45);
+    ctx.fillStyle = crossCd > 0 ? 'rgba(255,255,255,0.18)' : `rgba(${JOBS[job].col},0.45)`; ctx.fillRect(bx, 88, 76 * (crossCd > 0 ? 1 - crossCd / sk.cd : 1), 26);
+    text(crossCd > 0 ? `K ${sk.name} ${Math.ceil(crossCd)}` : `K ${sk.name}`, bx + 38, 101, 13, crossCd > 0 ? '#aab' : '#ffffff');
   }
   // 시간
   panel(W - 92, 14, 78, 32, 0.45);
@@ -2790,7 +2920,7 @@ function drawHud() {
   } else if (state === 'church') {
     panel(W / 2 - 170, 12, 340, 52, 0.5);
     text('성당', W / 2, 30, 20, '#ffd23f');
-    text('사제에게 S 로 말 걸기 · 왼쪽 문에서 S 로 나가기', W / 2, 52, 14, '#ffffff');
+    text('성녀에게 S 로 말 걸기 · 왼쪽 문에서 S 로 나가기', W / 2, 52, 14, '#ffffff');
   } else if (!boss && state !== 'title') {
     panel(W / 2 - 150, 12, 300, 52, 0.5);
     const left = spawnLeft + mobs.length, next = Math.ceil(floor / BOSS_EVERY) * BOSS_EVERY;
@@ -2804,7 +2934,7 @@ function drawHud() {
     if (boss.hpShow === undefined) boss.hpShow = boss.hp;
     boss.hpShow += (boss.hp - boss.hpShow) * 0.06;
     panel(bx - 14, 10, bw + 28, 62, 0.5);
-    text(`${floor}층 보스  ${boss.name}${boss.ph2 ? '  (화났다!)' : ''}`, W / 2, 30, 20, boss.ph2 ? '#ff8a8a' : '#ffffff');
+    text(`${boss.saint ? '' : floor + '층 보스  '}${boss.name}${boss.ph2 ? '  (화났다!)' : ''}`, W / 2, 30, 20, boss.ph2 ? '#ff8a8a' : '#ffffff');
     ctx.fillStyle = '#1a1014'; ctx.fillRect(bx - 2, by - 2, bw + 4, 16);
     ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.fillRect(bx, by, bw * clamp(boss.hpShow / boss.maxHp, 0, 1), 12);
     const hg = ctx.createLinearGradient(0, by, 0, by + 12);
@@ -2817,7 +2947,7 @@ function drawHud() {
 
   if (state === 'intro') {
     ctx.globalAlpha = clamp(1.6 - stateT, 0, 1);
-    text(`${floor}층 보스`, W / 2, H / 2 - 95, 24, '#ffd23f');
+    text(boss.saint ? '성당의 수호자' : `${floor}층 보스`, W / 2, H / 2 - 95, 24, '#ffd23f');
     text(boss.name, W / 2, H / 2 - 40, 56, '#ffffff');
     text('등장!', W / 2, H / 2 + 20, 28, '#ffd23f');
     ctx.globalAlpha = 1;
@@ -2835,7 +2965,7 @@ function drawHud() {
     text('쓰러졌다...', W / 2, H / 2 - 50, 52, '#ff6b6b');
     if (stateT > 0.8) {
       text('Enter  성당에서 부활 (하트 가득)', W / 2, H / 2 + 20, 22, '#ffffff');
-      text(`${job === 'blessed' ? '신의 은총으로 골드는 그대로예요' : '골드 절반을 잃고'}, 다음엔 ${section() * BOSS_EVERY + 1}층부터 시작해요`, W / 2, H / 2 + 56, 20, '#cbd5e0');
+      text(`${job === 'blessed' || job === 'heir' ? '신의 은총으로 골드는 그대로예요' : '골드 절반을 잃고'}, 다음엔 ${section() * BOSS_EVERY + 1}층부터 시작해요`, W / 2, H / 2 + 56, 20, '#cbd5e0');
     }
   } else if (state === 'win') {
     ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(0, 0, W, H);
